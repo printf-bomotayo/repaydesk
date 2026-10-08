@@ -17,7 +17,7 @@ from repaydesk.adapters.ports import (
     OutboundMessage,
     PostedRepayment,
 )
-from repaydesk.domain import Borrower, Branch, Group, Loan, Product
+from repaydesk.domain import Borrower, Branch, Group, Loan, Product, bank_today
 
 
 def normalise(text: str) -> str:
@@ -40,7 +40,7 @@ def apply_payments(loan: Loan, paid_total: int, today: date) -> tuple[tuple[DueI
 
 class MemoryCoreBanking:
     def __init__(self, today: date | None = None):
-        self.today = today or date.today()
+        self.today = today or bank_today()
         self.borrowers: dict[str, Borrower] = {}
         self.groups: dict[str, Group] = {}
         self.loans: dict[str, Loan] = {}

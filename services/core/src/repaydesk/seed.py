@@ -31,7 +31,7 @@ from repaydesk.adapters.chart import OPENING_BALANCE, PRINCIPAL, REPAYMENT_JOURN
 from repaydesk.adapters.fineract import FineractCoreBanking
 from repaydesk.adapters.odoo import OdooLedger
 from repaydesk.adapters.ports import AlreadyPosted, JournalEntry, JournalLine
-from repaydesk.domain import Book, Loan, naira
+from repaydesk.domain import Book, Loan, bank_today, naira
 from repaydesk.synth.generator import Generator
 from repaydesk.synth.names import COLLECTION_ACCOUNTS
 from repaydesk.synth.writers import write_week
@@ -161,7 +161,7 @@ def _run(args, root) -> int:
             args.seed, args.borrowers, args.as_of = previous[0], previous[1], previous[2]
             log(f"reusing the first run's settings: seed {args.seed}, {args.borrowers} borrowers, as of {args.as_of}")
 
-    as_of = args.as_of or date.today()
+    as_of = args.as_of or bank_today()
     root.set_attributes({"seed.random": args.seed, "seed.borrowers": args.borrowers, "seed.as_of": str(as_of)})
 
     with tracer.start_as_current_span("generate"):

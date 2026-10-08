@@ -72,6 +72,12 @@ This chunk builds the simulator:
   endpoint with `wget`.
 - *Langfuse v4 retired its traces and metrics read endpoints*; `api/public/v2/observations` is the one
   that answers.
+- *"Today" is the bank's date, not the machine's.* Fineract runs on `Africa/Lagos` and dates arrears
+  by it, while CI runners and containers run on UTC, so from 23:00 to midnight UTC the two disagree.
+  A CI run at 23:22 UTC on 8 October failed the arrears contract test (34 days late against an
+  expected 33). The seeder would have dated a book a day behind Fineract in the same hour. Everything
+  now takes the date from `domain.bank_today()` (`BANK_TIMEZONE`, default `Africa/Lagos`), with
+  `tzdata` as a dependency because Windows has no time zone database. _Corrected in chunk 4._
 
 **Principles.** _Same simulator metaphor._ *Practise on the real instruments* — integration work
 against mocks proves the mocks. *One contract, two implementations* — every contract test runs against
@@ -513,6 +519,10 @@ clash on the line's id, or two could claim the same duplicate number. The test r
 but the webhook endpoint doesn't retry, so the provider would have got a 500. Fixed in `store_line`
 without locks, and the test's retry loop removed. The details are corrected in chunk 2's section.
 
+**And a time zone bug, from chunk 1.** CI for this chunk ran at 23:22 UTC, already the next day in
+Lagos, and a Fineract contract test failed by one day of arrears. Fixed in a follow-up commit; the
+details are in chunk 1's findings.
+
 **Principles.** _Same mandate metaphor._ *Check the mandate before paying, not after* — the rules run
 inside the transaction that would act on them. *Two signatures, one with authority* — the second
 pair of eyes needs a limit to back it, or it's a ritual. *The counterfoil is written with the
@@ -521,6 +531,8 @@ can see every decision and make none.
 
 **Files.** New: `services/core/src/repaydesk/approvals.py`, `staff.py`,
 `migrations/004_approvals.sql`, `tests/test_approvals.py`, `docs/adr/0005-approval-rules.md`.
+Follow-up: `domain.py` (`bank_today`), `seed.py`, `synth/generator.py`, `adapters/memory.py`,
+`tests/contract/test_contracts.py`, `pyproject.toml` (`tzdata`).
 Changed: `api.py` (sign-in, `/me`, `/queue`, `/proposals/{id}`, approve, reject), `match.py` (skips
 rejected lines), `ingest.py` (the race fix), `tests/test_ingest.py`, `compose.yaml` and `.env.example`
 (`STAFF_DEMO_PASSWORD`, `SESSION_SECRET`), `README.md`.

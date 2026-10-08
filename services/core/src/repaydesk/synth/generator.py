@@ -30,6 +30,7 @@ from repaydesk.domain import (
     PaymentLine,
     Repayment,
     Truth,
+    bank_today,
 )
 from repaydesk.synth import names
 
@@ -78,7 +79,7 @@ class _Payment:
 class Generator:
     def __init__(self, seed: int = 42, as_of: date | None = None, bank_name: str = "Demo Microfinance Bank"):
         self.r = random.Random(seed)
-        self.as_of = as_of or date.today()
+        self.as_of = as_of or bank_today()
         self.week_start = self.as_of - timedelta(days=7)
         self.bank_name = bank_name
         self._counters: dict[str, int] = defaultdict(int)

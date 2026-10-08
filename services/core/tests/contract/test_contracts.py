@@ -17,11 +17,11 @@ import pytest
 from repaydesk.adapters.chart import INTEREST_INCOME, PRINCIPAL, REPAYMENT_JOURNAL, SUSPENSE, collection_account_code
 from repaydesk.adapters.memory import MemoryCoreBanking, MemoryLedger
 from repaydesk.adapters.ports import AlreadyPosted, JournalEntry, JournalLine
-from repaydesk.domain import Borrower, Installment, Loan
+from repaydesk.domain import Borrower, Installment, Loan, bank_today
 from repaydesk.synth.generator import add_months
 from repaydesk.synth.names import BRANCHES, COLLECTION_ACCOUNTS, PRODUCTS
 
-TODAY = date.today()
+TODAY = bank_today()  # Fineract's date, not the runner's: they differ from 23:00 UTC
 
 
 def _fineract():

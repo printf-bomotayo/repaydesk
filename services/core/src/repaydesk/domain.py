@@ -6,9 +6,19 @@ edge, because Fineract and Odoo both speak decimal naira.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
+from zoneinfo import ZoneInfo
+
+BANK_TIMEZONE = os.getenv("BANK_TIMEZONE", "Africa/Lagos")
+
+
+def bank_today() -> date:
+    """Today at the bank. Fineract runs on the bank's time zone and dates arrears by it, so a
+    machine on UTC between 23:00 and midnight must not use its own date."""
+    return datetime.now(ZoneInfo(BANK_TIMEZONE)).date()
 
 
 def naira(kobo: int) -> str:
