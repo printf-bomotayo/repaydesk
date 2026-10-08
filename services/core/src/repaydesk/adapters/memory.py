@@ -92,6 +92,10 @@ class MemoryCoreBanking:
         scored.sort(key=lambda s: (-s[0], s[1]))
         return [self._match(self.borrowers[ref]) for _, ref in scored[:limit]]
 
+    def get_borrower(self, borrower_ref: str) -> BorrowerMatch | None:
+        b = self.borrowers.get(borrower_ref)
+        return self._match(b) if b else None
+
     def find_by_phone(self, phone: str) -> BorrowerMatch | None:
         digits = "".join(c for c in phone if c.isdigit())
         for b in self.borrowers.values():

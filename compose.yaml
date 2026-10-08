@@ -189,6 +189,28 @@ services:
     volumes:
       - ./data:/data
 
+  # One-shot: rule matching over every new line. Reads Fineract; writes only proposals.
+  match:
+    build: ./services/core
+    profiles: ["tools"]
+    command: ["python", "-m", "repaydesk.match"]
+    depends_on:
+      db:
+        condition: service_healthy
+      fineract:
+        condition: service_healthy
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: repaydesk-match
+      REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
+      FINERACT_URL: http://fineract:8080/fineract-provider/api/v1
+      FINERACT_TENANT: default
+      FINERACT_USERNAME: ${FINERACT_USERNAME:-mifos}
+      FINERACT_PASSWORD: ${FINERACT_PASSWORD:-password}
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+
 volumes:
   pgdata:
   odoodata:

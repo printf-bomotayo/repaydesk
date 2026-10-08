@@ -64,9 +64,11 @@ def _unique() -> str:
 
 def _borrower(tag: str) -> Borrower:
     digits = str(int(tag, 16) % 10**6).zfill(6)
-    return Borrower(ref=f"CUS-T{tag}", first_name="Ngozi", last_name=f"Contract{tag.title()}",
+    # Letters only: real surnames have no digits, and Fineract's name search is case-sensitive.
+    surname = "Contract" + tag.translate(str.maketrans("0123456789", "ghijklmnop")).lower()
+    return Borrower(ref=f"CUS-T{tag}", first_name="Ngozi", last_name=surname,
                     phone=f"07009{digits}", branch_code="IKJ", joined_on=TODAY - timedelta(days=400),
-                    business_name=f"Ngozi {tag.title()} Provisions")
+                    business_name=f"Ngozi {surname[8:].title()} Provisions")
 
 
 def _loan(b: Borrower, tag: str, disbursed: date, n: int = 6) -> Loan:
@@ -87,6 +89,9 @@ def test_borrower_can_be_found_by_phone_and_name(core):
     by_phone = core.find_by_phone(b.phone)
     assert by_phone and by_phone.borrower_ref == b.ref and by_phone.branch_code == "IKJ"
     assert by_phone.business_name == b.business_name
+
+    assert core.get_borrower(b.ref) == by_phone
+    assert core.get_borrower("CUS-NOPE") is None
 
     hits = core.search_borrowers(f"{b.last_name.upper()} {b.first_name.upper()}")
     assert hits and hits[0].borrower_ref == b.ref

@@ -68,6 +68,10 @@ jobs:
         run: |
           docker compose run --rm --build ingest
           docker compose run --rm ingest python -m repaydesk.ingest --replay-webhooks http://api:8000
+      - name: rule matching, scored against the truth file (fails on any wrong proposal)
+        run: |
+          docker compose run --rm --build match
+          docker compose run --rm match python -m repaydesk.scoring
       - run: pip install -e "services/core[dev]"
       - name: contract tests against Fineract and Odoo
         working-directory: services/core

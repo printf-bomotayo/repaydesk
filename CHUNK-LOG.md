@@ -227,3 +227,122 @@ shows a replay as one trace spanning `repaydesk-ingest` and `repaydesk-api`.
 **Plan.** Milestone 2, rules, approvals and gateway: ingestion for files and webhooks.
 
 ---
+
+## Chunk 3 — rule matching ✅
+
+_Date: 2026-10-08_
+
+**What & why.** _Metaphor: a sorting office that only sorts what is clearly addressed._ A letter
+with a full, legible address goes straight into the right pigeonhole. A letter with half an
+address, a smudged postcode or only a nickname goes to the dead-letter desk, where someone
+experienced works it out. The sorter is never allowed to guess, because a guessed letter lands in
+the wrong house and nobody notices until the real recipient complains. In Repaydesk the wrong house
+is someone else's loan, and the complaint comes from a borrower being chased for a payment they
+made.
+
+This chunk adds the sorter. Rules propose only what is certain, and the rest waits for the
+investigator agent in milestone 3:
+
+- `virtual_account` — the money arrived in a loan's own virtual account.
+- `loan_reference` — the line quotes a loan reference that exists and is active, the payer's name
+  includes the borrower's surname, and one more independent thing agrees: an amount the loan has
+  due, or the same branch. A line from a known branch other than the borrower's is never matched by
+  rule. A POS line has no name at all, so there the branch and an amount due must both agree.
+- `pos_phone` — the agent typed the borrower's phone, and that borrower has exactly one active loan.
+- `not_repayment` — the narration is a known kind of credit that isn't a repayment: a reversal, the
+  bank's own interest, an internal float top-up. Proposed for exclusion, still approved by a person.
+
+A proposal is a row in the new `proposals` table: what the line is (`match` or `exclude`), which
+loans with how much, who proposed it, and the evidence checked, kept for the reviewer. The database
+allows one live proposal per line. A rejected one stays as history.
+
+`repaydesk.scoring` compares proposals with the truth file case by case. It is the yardstick for the
+agent too, and CI now runs it after matching and fails the build on any wrong proposal.
+
+**How the reference rule got its shape.** Each version of the rule was swept across many generated
+books, and each sweep found a real way to be wrong:
+
+1. *Reference plus a matching amount.* On the seeded book, a cash slip quoting a mistyped
+   reference was matched to another borrower's loan. Loan numbers are dense, so the typo named a
+   real loan. Instalments are standard sizes, so that loan had ₦363,000 due, exactly the amount paid.
+2. *Reference plus any shared name.* Across 40 books, FRIDAY IKPE's mistyped reference named Friday
+   Briggs's loan, which had the amount due. A shared first name confirmed it. The payer's surname
+   contradicted it.
+3. *Reference plus the surname and a second shared name.* Across 100 books, two different
+   borrowers both called Yetunde Salami, at Oshodi and Ibadan, met through a mistyped cash slip.
+   The slip came from the other branch.
+4. *The rule as it stands* — surname, plus an amount due or the same branch, with another branch as
+   a veto. Across 100 books and 35,053 lines: no wrong proposal.
+
+Each found case is now a named test, and 20 of the 100 books run in the suite on every push.
+
+**The price, stated plainly.** Rules propose about 60% of lines. Of quoted references, 71% of
+transfers and 82% of cash slips are matched by rule; the rest have a truncated surname, a relative
+paying, or a partial amount. They go to the agent, which can weigh evidence a rule can't. A rule
+that matched 5% more lines and was wrong once in a few thousand would be a worse system.
+
+**Principles.** _Same sorting-office metaphor._ *Certain or not at all* — a rule's errors are
+invisible until a customer complains, so rules carry no confidence below 1. *Two independent
+witnesses* — a reference is a claim and a name or an amount alone is a coincidence, so it takes
+agreement between things that fail differently. *Let a contradiction veto* — a payment at another
+branch is evidence against, not just absence of evidence for. *Measure across many worlds, not
+one* — every flaw above was invisible in the single seeded book and plain across a hundred.
+
+**Files.** New: `services/core/src/repaydesk/match.py`, `scoring.py`, `migrations/003_proposals.sql`,
+`tests/test_match.py`. Changed: `adapters/ports.py`, `memory.py` and `fineract.py` (`get_borrower`
+added to the read contract), `tests/contract/test_contracts.py`, `compose.yaml` (the `match` tool),
+`scripts/dev.py` (`match` and `score` tasks), `Makefile`, `.github/workflows/ci.yml` (matching and the
+scoring gate in the stack job), `README.md`.
+
+**A test that failed for the wrong reason, twice.** The Fineract contract test for name search
+failed about one run in five. Its synthetic surnames mixed letters and digits (`ContractF0Da1717`),
+and Python's `title()` capitalises a letter after a digit, so a tag starting with a letter made a
+case-sensitive miss. Real surnames have no digits, so the test now builds them from letters. The
+new sweep test first fed redelivered webhooks to the matcher, which never happens in the real flow,
+because ingestion marks them first. It now skips them, as the scorer does.
+
+**Depends on / blocks.** Depends on chunk 2. Blocks chunk 4, which approves or rejects these
+proposals.
+
+**Verification.** `ruff` clean. `pytest`: 63 passed, 7 deselected. That covers the found-case tests,
+coverage floors per case, a 20-book sweep asserting no wrong proposal, and a database test for the
+one-live-proposal index, the match-needs-loans check, and the audit rows. The `get_borrower`
+contract passes against Fineract, six runs in a row.
+
+On the seeded stack, against real Fineract, `python scripts/dev.py match` then `score` gave 218
+of 351 lines proposed, 218 correct, 0 wrong:
+
+| Case | Lines | Proposed | Correct |
+|---|---:|---:|---:|
+| virtual_account | 141 | 141 | 141 |
+| exact_ref | 42 | 26 | 26 |
+| cash_ref | 24 | 20 | 20 |
+| pos_phone | 17 | 17 | 17 |
+| not_repayment | 8 | 8 | 8 |
+| pos_ref | 7 | 6 | 6 |
+| everything else | 112 | 0 | 0 |
+
+What it does not prove: that the rules are never wrong on real statements. The sweep covers the
+coincidences the generator can produce, and a real bank will have others. The pilot's shadow mode
+(plan, stage 3) measures exactly that before any rule posts for real.
+
+**PR package.**
+
+- Subject: `Chunk 3: rule matching, and scoring against the truth`
+- Description:
+  > Adds rule matching that proposes only certain cases. Those are a loan's own virtual account,
+  > a quoted reference confirmed by the borrower's surname and an amount due or the same branch, a
+  > typed phone with one active loan, and known non-repayment credits. Everything else waits for
+  > the agent. Proposals are stored with their evidence; the database allows one live proposal per
+  > line.
+  >
+  > Adds scoring against the truth file, case by case, now a CI gate: any wrong proposal fails the
+  > build.
+  >
+  > The reference rule was tightened three times by sweeping it over generated books, and each
+  > found case is a named test. Final: 0 wrong across 100 books (35,053 lines), about 60%
+  > coverage. On the seeded stack: 218 of 351 proposed, all correct.
+
+**Plan.** Milestone 2, rules, approvals and gateway: rule matching.
+
+---

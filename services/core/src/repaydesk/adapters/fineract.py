@@ -281,6 +281,10 @@ class FineractCoreBanking:
             loan_refs=tuple(loan["externalId"] for loan in loans.get("loanAccounts", []) if loan.get("externalId")),
         )
 
+    def get_borrower(self, borrower_ref: str) -> BorrowerMatch | None:
+        c = self._get_or_none(f"/clients/external-id/{borrower_ref}", params={"fields": "id"})
+        return self._to_match(c["id"]) if c else None
+
     def search_borrowers(self, text: str, limit: int = 10) -> list[BorrowerMatch]:
         words = [w.title() for w in "".join(c if c.isalnum() else " " for c in text).split() if len(w) > 1]
         scores: dict[int, int] = {}

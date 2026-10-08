@@ -46,7 +46,7 @@ collection journals in Odoo, and writes a week of incoming payments to `data/inb
 | Postgres | 127.0.0.1:15432 |
 | The week's payment files | `data/inbox/` |
 
-Other tasks: `seed`, `ingest`, `down`, `reset`, `test`, `itest`, `lint`, `urls`
+Other tasks: `seed`, `ingest`, `match`, `score`, `down`, `reset`, `test`, `itest`, `lint`, `urls`
 (`python scripts/dev.py <task>`).
 
 On Windows, use `127.0.0.1` rather than `localhost`; `localhost` tries IPv6 first and adds
@@ -97,6 +97,12 @@ Built so far (milestone 1):
   once. A redelivered webhook or a resent statement is kept as a duplicate pointing at its
   original, and the database's unique index decides, not a check in code. A forged webhook gets a 401
   and stores nothing.
+- **Rule matching** (chunk 3): `python scripts/dev.py match` proposes only what is certain. That
+  covers a loan's own virtual account, a quoted loan reference backed by the borrower's surname and an
+  amount due or the same branch, a typed phone with one active loan, and known non-repayment
+  credits. `python scripts/dev.py score` checks every proposal against the truth file. Rules cover
+  about 60% of lines and have made no wrong proposal across 100 generated books (35,053 lines). The rest
+  waits for the investigator agent.
 - **CI**: lint and tests on every push. On main, the full stack comes up, gets seeded, and
   the contract tests run against it.
 

@@ -6,6 +6,8 @@
     python scripts/dev.py down      stop, keep data
     python scripts/dev.py reset     stop and delete all data, including the week's files
     python scripts/dev.py ingest    take in the week's statement files, then deliver its webhooks to the API
+    python scripts/dev.py match     propose matches for new lines by rule (certain cases only)
+    python scripts/dev.py score     score the live proposals against the truth file
     python scripts/dev.py test      unit, contract and database tests (database tests skip without the stack)
     python scripts/dev.py itest     contract tests against the running Fineract and Odoo
     python scripts/dev.py lint      ruff
@@ -123,6 +125,11 @@ def main(task: str) -> None:
         run("docker", "compose", "run", "--rm", "--build", "ingest")
         run("docker", "compose", "run", "--rm", "ingest", "python", "-m", "repaydesk.ingest",
             "--replay-webhooks", "http://api:8000")
+    elif task == "match":
+        run("docker", "compose", "run", "--rm", "--build", "match")
+    elif task == "score":
+        # Proposals against the truth file; exits non-zero if any proposal is wrong.
+        run("docker", "compose", "run", "--rm", "match", "python", "-m", "repaydesk.scoring", *sys.argv[2:])
     elif task == "test":
         # Database tests use the compose Postgres when it is up; without it they skip.
         run(python(), "-m", "pytest", "-q", cwd=CORE, env={"REPAYDESK_TEST_DATABASE_URL": test_database_url()})
