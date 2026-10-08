@@ -1,0 +1,54 @@
+# collector.yaml plus a second pipeline: model-call spans to Langfuse.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+  attributes/scrub:
+    actions:
+      - key: borrower.phone
+        action: delete
+      - key: borrower.name
+        action: delete
+      - key: payment.narration
+        action: delete
+  # Langfuse only needs the model calls, not every Fineract lookup.
+  filter/genai-only:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["gen_ai.system"] == nil and attributes["gen_ai.operation.name"] == nil'
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  otlphttp/langfuse:
+    endpoint: ${env:LANGFUSE_OTLP_ENDPOINT}
+    headers:
+      Authorization: Basic ${env:LANGFUSE_AUTH}
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, batch]
+      exporters: [otlp/jaeger]
+    traces/langfuse:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, filter/genai-only, batch]
+      exporters: [otlphttp/langfuse]

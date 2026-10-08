@@ -1,0 +1,15 @@
+.env
+data/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+bin/
+obj/
+.vs/
+.idea/
+
+# Private outreach material stays out of the repo
+*.pdf

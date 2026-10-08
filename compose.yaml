@@ -1,0 +1,155 @@
+# Repaydesk local stack. `make up` (or `python scripts/dev.py up`) starts it and seeds it.
+#
+#   Fineract   core banking: borrowers, loans, schedules, repayments   http://localhost:18080
+#   Odoo       finance ledger: collection accounts, suspense, journals  http://localhost:18069
+#   Postgres   one instance, a database per system                      localhost:15432
+#   Collector  OpenTelemetry in, Jaeger out
+#   Jaeger     traces                                                   http://localhost:16686
+#
+# Everything here is synthetic and for local use. Secrets come from .env (copy .env.example).
+
+name: repaydesk
+
+x-otel: &otel
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${REPAYDESK_ENV:-local}
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      FINERACT_DB_PASSWORD: ${FINERACT_DB_PASSWORD:?set FINERACT_DB_PASSWORD in .env}
+      ODOO_DB_PASSWORD: ${ODOO_DB_PASSWORD:?set ODOO_DB_PASSWORD in .env}
+      REPAYDESK_DB_PASSWORD: ${REPAYDESK_DB_PASSWORD:?set REPAYDESK_DB_PASSWORD in .env}
+      LANGFUSE_DB_PASSWORD: ${LANGFUSE_DB_PASSWORD:-}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/01-databases.sh:/docker-entrypoint-initdb.d/01-databases.sh:ro
+    ports:
+      - "127.0.0.1:15432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-U", "postgres"]
+      interval: 5s
+      retries: 20
+
+  fineract:
+    image: apache/fineract:1.12.1
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FINERACT_NODE_ID: "1"
+      FINERACT_SERVER_PORT: "8080"
+      FINERACT_SERVER_SSL_ENABLED: "false"
+      FINERACT_HIKARI_DRIVER_SOURCE_CLASS_NAME: org.postgresql.Driver
+      FINERACT_HIKARI_JDBC_URL: jdbc:postgresql://db:5432/fineract_tenants
+      FINERACT_HIKARI_USERNAME: fineract
+      FINERACT_HIKARI_PASSWORD: ${FINERACT_DB_PASSWORD}
+      FINERACT_DEFAULT_TENANTDB_HOSTNAME: db
+      FINERACT_DEFAULT_TENANTDB_PORT: "5432"
+      FINERACT_DEFAULT_TENANTDB_UID: fineract
+      FINERACT_DEFAULT_TENANTDB_PWD: ${FINERACT_DB_PASSWORD}
+      FINERACT_DEFAULT_TENANTDB_NAME: fineract_default
+      FINERACT_DEFAULT_TENANTDB_IDENTIFIER: default
+      FINERACT_DEFAULT_TENANTDB_TIMEZONE: Africa/Lagos
+      FINERACT_DEFAULT_TENANTDB_DESCRIPTION: Repaydesk demo tenant
+      FINERACT_DEFAULT_MASTER_PASSWORD: ${FINERACT_MASTER_PASSWORD:?set FINERACT_MASTER_PASSWORD in .env}
+      FINERACT_DEFAULT_TENANTDB_MASTER_PASSWORD: ${FINERACT_MASTER_PASSWORD}
+      FINERACT_CONTENT_FILESYSTEM_ROOT_FOLDER: /tmp
+      JAVA_TOOL_OPTIONS: -Xmx1G -XX:+UseContainerSupport -XX:TieredStopAtLevel=1
+    ports:
+      - "127.0.0.1:18080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/fineract-provider/actuator/health | grep -q UP"]
+      interval: 10s
+      start_period: 60s
+      retries: 30
+
+  # Creates the ledger database with the accounting app, once. Odoo itself starts after.
+  odoo-init:
+    image: odoo:18.0
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &odoo-env
+      HOST: db
+      USER: odoo
+      PASSWORD: ${ODOO_DB_PASSWORD}
+    command: >
+      sh -c "psql postgresql://odoo:$${PASSWORD}@db/postgres -tAc \"SELECT 1 FROM pg_database WHERE datname='ledger'\" | grep -q 1
+      || odoo --db_host=db --db_user=odoo --db_password=$${PASSWORD}
+      -d ledger -i account --without-demo=all --load-language=en_US --stop-after-init"
+    volumes:
+      - odoodata:/var/lib/odoo
+
+  odoo:
+    image: odoo:18.0
+    depends_on:
+      odoo-init:
+        condition: service_completed_successfully
+    environment: *odoo-env
+    command: ["odoo", "-d", "ledger", "--db-filter=^ledger$$", "--proxy-mode"]
+    volumes:
+      - odoodata:/var/lib/odoo
+    ports:
+      - "127.0.0.1:18069:8069"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8069/web/health || exit 1"]
+      interval: 10s
+      start_period: 30s
+      retries: 20
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.137.0
+    command: ["--config=/etc/otelcol/collector.yaml"]
+    volumes:
+      - ./infra/otel/collector.yaml:/etc/otelcol/collector.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/jaeger:2.11.0
+    ports:
+      - "127.0.0.1:16686:16686"
+
+  # One-shot: migrates the Repaydesk database, sets up Fineract and Odoo, loads the
+  # synthetic book and writes a week of incoming payments. Safe to re-run: it skips
+  # anything already seeded unless given --reset.
+  seed:
+    build: ./services/core
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+      fineract:
+        condition: service_healthy
+      odoo:
+        condition: service_healthy
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: repaydesk-seed
+      REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
+      FINERACT_URL: http://fineract:8080/fineract-provider/api/v1
+      FINERACT_TENANT: default
+      FINERACT_USERNAME: ${FINERACT_USERNAME:-mifos}
+      FINERACT_PASSWORD: ${FINERACT_PASSWORD:-password}
+      ODOO_URL: http://odoo:8069
+      ODOO_DB: ledger
+      ODOO_USERNAME: ${ODOO_USERNAME:-admin}
+      ODOO_PASSWORD: ${ODOO_PASSWORD:-admin}
+      BANK_NAME: ${BANK_NAME:-Demo Microfinance Bank}
+      SEED_BORROWERS: ${SEED_BORROWERS:-2000}
+      SEED_RANDOM: ${SEED_RANDOM:-42}
+      DATA_DIR: /data
+      PAYRAIL_WEBHOOK_SECRET: ${PAYRAIL_WEBHOOK_SECRET:-dev-only-payrail-secret}
+    volumes:
+      - ./data:/data
+
+volumes:
+  pgdata:
+  odoodata:

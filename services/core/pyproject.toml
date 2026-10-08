@@ -1,0 +1,37 @@
+[project]
+name = "repaydesk"
+version = "0.1.0"
+description = "Repayment reconciliation and collections for a microfinance bank, on Fineract and Odoo"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.27",
+  "psycopg[binary]>=3.2",
+  "opentelemetry-api>=1.27",
+  "opentelemetry-sdk>=1.27",
+  "opentelemetry-exporter-otlp-proto-http>=1.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+repaydesk-seed = "repaydesk.seed:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/repaydesk"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs the running stack (make up)"]
+addopts = "-m 'not integration'"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

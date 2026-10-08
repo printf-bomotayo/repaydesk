@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  core:
+    name: lint and test (no stack)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/core/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: pytest -q
+
+  compose:
+    name: compose file is valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose config --quiet
+      - run: docker compose --profile tools config --quiet
+
+  stack:
+    # The whole stack, a small seed, and the contract tests against real Fineract and Odoo.
+    # About ten minutes, so it runs on main and on demand, not on every pull request.
+    name: stack, seed and contract tests
+    if: github.event_name != 'pull_request'
+    needs: [core, compose]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SEED_BORROWERS: "300"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: cp .env.example .env
+      - run: docker compose up -d --wait --wait-timeout 900
+      - run: docker compose run --rm --build seed
+      - run: pip install -e "services/core[dev]"
+      - name: contract tests against Fineract and Odoo
+        working-directory: services/core
+        env:
+          FINERACT_URL: http://127.0.0.1:18080/fineract-provider/api/v1
+          ODOO_URL: http://127.0.0.1:18069
+        run: pytest -q -m integration
+      - name: the seed left a trace in Jaeger
+        run: |
+          curl -sf "http://127.0.0.1:16686/api/traces?service=repaydesk-seed&limit=1" | python -c \
+            "import json,sys; d=json.load(sys.stdin)['data']; assert d and len(d[0]['spans']) > 100, 'no seed trace'; print(len(d[0]['spans']), 'spans')"
+      - if: failure()
+        run: docker compose logs --tail=200
