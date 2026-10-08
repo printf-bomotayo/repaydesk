@@ -49,6 +49,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: cp .env.example .env
+      # Docker would create the bind-mounted folder as root; the containers run as a non-root user.
+      - run: mkdir -p data && chmod 777 data
       - run: docker compose up -d --wait --wait-timeout 900
       - run: docker compose run --rm --build seed
       - run: pip install -e "services/core[dev]"
