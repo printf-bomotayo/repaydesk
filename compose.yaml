@@ -1,6 +1,7 @@
 # Repaydesk local stack. `make up` (or `python scripts/dev.py up`) starts it and seeds it.
 #
 #   Fineract   core banking: borrowers, loans, schedules, repayments   http://localhost:18080
+#   Mifos      Fineract's staff screens                                 http://localhost:18081
 #   Odoo       finance ledger: collection accounts, suspense, journals  http://localhost:18069
 #   Postgres   one instance, a database per system                      localhost:15432
 #   Collector  OpenTelemetry in, Jaeger out
@@ -68,6 +69,30 @@ services:
       interval: 10s
       start_period: 60s
       retries: 30
+
+  # Fineract's own staff screens (the Mifos X web app). It runs in the browser and calls
+  # Fineract directly, so the API address is the one the browser sees, not the compose one.
+  mifos:
+    image: openmf/web-app:1.14
+    depends_on:
+      fineract:
+        condition: service_healthy
+    environment:
+      FINERACT_API_URLS: ${FINERACT_PUBLIC_URL:-http://127.0.0.1:18080}
+      FINERACT_API_URL: ${FINERACT_PUBLIC_URL:-http://127.0.0.1:18080}
+      FINERACT_API_PROVIDER: /fineract-provider/api
+      FINERACT_API_VERSION: /v1
+      FINERACT_PLATFORM_TENANT_IDENTIFIER: default
+      MIFOS_DEFAULT_LANGUAGE: en-US
+      MIFOS_SUPPORTED_LANGUAGES: en-US
+      MIFOS_PRELOAD_CLIENTS: "false"
+      MIFOS_ENABLE_COPILOT: "false"
+    ports:
+      - "127.0.0.1:18081:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      retries: 10
 
   # Creates the ledger database with the accounting app, once. Odoo itself starts after.
   odoo-init:

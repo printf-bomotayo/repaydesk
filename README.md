@@ -39,8 +39,9 @@ collection journals in Odoo, and writes a week of incoming payments to `data/inb
 
 | What | Where |
 |---|---|
-| Fineract API | http://127.0.0.1:18080/fineract-provider/api/v1 (tenant `default`) |
-| Odoo ledger | http://127.0.0.1:18069 (database `ledger`) |
+| Fineract API | http://127.0.0.1:18080/fineract-provider/api/v1 (tenant `default`); Swagger at `/fineract-provider/swagger-ui/index.html` |
+| Fineract staff screens | http://127.0.0.1:18081 (Mifos X web app; login `mifos` / `password`, tenant `default`) |
+| Odoo ledger | http://127.0.0.1:18069 (database `ledger`, login `admin` / `admin`; Invoicing → Accounting → Journal Entries) |
 | Jaeger traces | http://127.0.0.1:16686 |
 | Repaydesk API | http://127.0.0.1:18000/docs |
 | Postgres | 127.0.0.1:15432 |
@@ -92,6 +93,8 @@ Built so far (milestone 1):
   messy lines, with the truth kept apart.
 - **Repaydesk's database** with an append-only audit log enforced by a trigger.
 - **Tracing**: the seed is one trace in Jaeger, with a span per borrower and loan loaded.
+- **Fineract's staff screens** (chunk 3a): the Mifos X web app, so a borrower, their schedule,
+  arrears and every repayment (with its external id) can be opened in core banking itself.
 - **Ingestion** (chunk 2): `python scripts/dev.py ingest` takes in the week's statement files,
   then delivers the provider's webhooks to the API one request at a time. Each line is stored
   once. A redelivered webhook or a resent statement is kept as a duplicate pointing at its

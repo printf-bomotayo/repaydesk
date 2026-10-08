@@ -346,3 +346,96 @@ coincidences the generator can produce, and a real bank will have others. The pi
 **Plan.** Milestone 2, rules, approvals and gateway: rule matching.
 
 ---
+
+## Chunk 3a — Fineract's staff screens, and where to look ✅
+
+_Date: 2026-10-08 · Added between chunks 3 and 4 at the user's request._
+
+**What & why.** _Metaphor: windows in the engine room._ A ship's engine runs fine whether or not
+anyone can see it. But an inspector who can only read gauge printouts has to take the engineer's word
+for everything; give them a window and they can watch the shaft turn. Fineract was running with no
+window. Its image is the server alone, so a borrower, a schedule or a posted repayment could be seen
+only through API calls. For a demo that is the difference between "trust me, it posted" and "here it
+is on the loan".
+
+This chunk adds the window: the **Mifos X web app** (`openmf/web-app:1.14`), Fineract's own
+open-source staff screens, as a compose service on port 18081. It also records what every system in
+the stack offers in a browser, because that question has an answer per system and it's worth not
+working out twice.
+
+**Where to look.** Every address below was checked on the running stack. Logins are the local demo
+values from `.env.example`; change them in `.env`.
+
+| System | What it is | Address | Login | Worth opening |
+|---|---|---|---|---|
+| Fineract, staff screens | Mifos X web app (added here) | http://127.0.0.1:18081 | `mifos` / `password`, tenant `default` | A borrower; their loan's **Repayment Schedule** (arrears in red); **Transactions** (external ids) |
+| Fineract, API reference | Swagger UI, built in | http://127.0.0.1:18080/fineract-provider/swagger-ui/index.html | as above, on each call | Any endpoint the adapter uses |
+| Odoo | The full Odoo web app, built in | http://127.0.0.1:18069 | `admin` / `admin` | **Invoicing → Accounting → Journal Entries** (the opening entry); **Chart of Accounts** |
+| Jaeger | Trace search, built in | http://127.0.0.1:16686 | none | Service `repaydesk-ingest`, operation `ingest.replay_webhooks`: one trace across ingest and the API |
+| Repaydesk API | FastAPI's docs, built in | http://127.0.0.1:18000/docs | none yet (chunk 4) | `POST /webhooks/payrail` |
+| Langfuse (optional) | Model-call traces | http://127.0.0.1:3000 | `admin@repaydesk.local`, password in `.env` | Generations, from milestone 3 |
+
+Useful direct links in the staff screens, which the app routes by id:
+`/#/clients/<client id>/general` and `/#/clients/<client id>/loans-accounts/<loan id>/repayment-schedule`.
+A loan's ids come from `GET /loans/external-id/LN-2026-001209`.
+
+Odoo Community hides some accounting menus by default. If they're missing, turn on developer mode
+under Settings, then tick "Show Full Accounting Features" on the admin user.
+
+**Decisions worth recording.**
+
+*The browser's address, not the compose one.* The web app is a single-page app: it runs in the
+browser and calls Fineract from there. So `FINERACT_API_URL` is the address the browser can reach
+(`http://127.0.0.1:18080`), not `http://fineract:8080`, which only exists inside compose. It is a
+variable, `FINERACT_PUBLIC_URL`, because the hosted demo will put both behind one HTTPS address.
+
+*No proxy needed.* Fineract already answers cross-origin requests from the app's address: a
+preflight from `http://127.0.0.1:18081` returns the matching `Access-Control-Allow-Origin` and
+credentials. So the app talks to Fineract directly, as it would in a bank's deployment.
+
+*A pinned release.* `1.14` is the newest numbered release; the `dev` tags change daily.
+
+*Always on.* It is an nginx serving static files, a few megabytes of memory, and it's the screen a
+reviewer most wants. It has a health check, so `up --wait` waits for it too.
+
+**What it showed straight away.** Zainab Shehu (`CUS-000950`, Abuja Wuse) has a six-month SME loan
+of ₦300,000. The first two instalments are paid on their due dates, and the third, ₦60,500 due 6
+October, is two days past due and shown as arrears. That is exactly the "steady payer with one
+instalment just due" the generator wrote. The transactions tab lists each repayment's external id
+(`HIST-0001789`, `HIST-0001790`). The posting gateway's idempotency keys will appear in that same
+column, so any repayment Repaydesk posts can be traced from core banking back to its approval. The
+`client_business` datatable that holds trading names appears as its own tab on the borrower.
+
+**Principles.** _Same engine-room metaphor._ *Show, don't assert* — a reviewer who can open the loan
+needs no screenshot of a log line. *Configure for where the code runs* — a browser app's API address
+is the browser's, and getting that wrong looks like a broken app rather than a wrong setting.
+*Write down the map once* — "is there a UI for this?" has a different answer per system, so the
+answers live here.
+
+**Files.** Changed: `compose.yaml` (the `mifos` service), `scripts/dev.py` (URL list), `README.md`
+(addresses and logins for every UI).
+
+**Depends on / blocks.** Depends on chunk 1 (Fineract). Blocks nothing; the gateway demo in chunk 6
+uses it to show a posted repayment landing on the loan.
+
+**Verification.** In the browser: signed in, opened a borrower, the loan's repayment schedule and its
+transactions, as described above. No console errors on any page. The service reports healthy, and
+`docker compose config` is valid.
+
+What it does not prove: every screen of the app against Fineract 1.12.1. The app's release is newer
+than the server, and only the screens above were exercised. A screen that calls an endpoint 1.12.1
+lacks would fail there, not elsewhere.
+
+**PR package.**
+
+- Subject: `Chunk 3a: Fineract's staff screens (Mifos X web app)`
+- Description:
+  > Adds the Mifos X web app on port 18081, pointed at Fineract's browser-facing address, with a
+  > health check. Fineract already allows the cross-origin calls, so no proxy is needed. Verified by
+  > signing in and opening a borrower, a loan's schedule and its transactions. Documents every web
+  > interface in the stack, with addresses and logins, in the README and the chunk log.
+
+**Plan.** Supports milestone 2's demo (a posted repayment visible in core banking) and milestone 6's
+hosted demo.
+
+---

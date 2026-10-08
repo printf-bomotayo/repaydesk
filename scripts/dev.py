@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "services" / "core"
 URLS = """
   Fineract API   http://127.0.0.1:18080/fineract-provider/api/v1   (tenant: default, user from .env)
+  Fineract UI    http://127.0.0.1:18081                             (Mifos X web app, same login)
   Odoo ledger    http://127.0.0.1:18069                             (database: ledger, user from .env)
   Jaeger         http://127.0.0.1:16686
   API            http://127.0.0.1:18000/docs
