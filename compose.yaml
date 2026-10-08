@@ -5,6 +5,7 @@
 #   Postgres   one instance, a database per system                      localhost:15432
 #   Collector  OpenTelemetry in, Jaeger out
 #   Jaeger     traces                                                   http://localhost:16686
+#   API        webhooks now, approvals later                            http://localhost:18000
 #
 # Everything here is synthetic and for local use. Secrets come from .env (copy .env.example).
 
@@ -147,6 +148,44 @@ services:
       SEED_RANDOM: ${SEED_RANDOM:-42}
       DATA_DIR: /data
       PAYRAIL_WEBHOOK_SECRET: ${PAYRAIL_WEBHOOK_SECRET:-dev-only-payrail-secret}
+    volumes:
+      - ./data:/data
+
+  # The API: the payment provider's webhook today; approvals from chunk 4.
+  api:
+    build: ./services/core
+    command: ["uvicorn", "repaydesk.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: repaydesk-api
+      REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
+      PAYRAIL_WEBHOOK_SECRET: ${PAYRAIL_WEBHOOK_SECRET:-dev-only-payrail-secret}
+    ports:
+      - "127.0.0.1:18000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      start_period: 10s
+      retries: 20
+
+  # One-shot: picks up new statement files from data/inbox. With --replay-webhooks it instead
+  # delivers the recorded provider webhooks to the API, one request each.
+  ingest:
+    build: ./services/core
+    profiles: ["tools"]
+    command: ["python", "-m", "repaydesk.ingest"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: repaydesk-ingest
+      REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
+      PAYRAIL_WEBHOOK_SECRET: ${PAYRAIL_WEBHOOK_SECRET:-dev-only-payrail-secret}
+      DATA_DIR: /data
     volumes:
       - ./data:/data
 

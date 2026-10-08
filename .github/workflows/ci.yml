@@ -8,8 +8,19 @@ on:
 
 jobs:
   core:
-    name: lint and test (no stack)
+    name: lint and test (Postgres, no stack)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: repaydesk
+          POSTGRES_PASSWORD: repaydesk
+          POSTGRES_DB: repaydesk
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U repaydesk" --health-interval 5s --health-retries 20
+    env:
+      REPAYDESK_TEST_DATABASE_URL: postgresql://repaydesk:repaydesk@127.0.0.1:5432/repaydesk
     defaults:
       run:
         working-directory: services/core
@@ -53,6 +64,10 @@ jobs:
       - run: mkdir -p data && chmod 777 data
       - run: docker compose up -d --wait --wait-timeout 900
       - run: docker compose run --rm --build seed
+      - name: ingest the week's files, then deliver its webhooks to the API
+        run: |
+          docker compose run --rm --build ingest
+          docker compose run --rm ingest python -m repaydesk.ingest --replay-webhooks http://api:8000
       - run: pip install -e "services/core[dev]"
       - name: contract tests against Fineract and Odoo
         working-directory: services/core

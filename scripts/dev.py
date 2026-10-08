@@ -5,7 +5,8 @@
     python scripts/dev.py seed      seed again (skips what exists)
     python scripts/dev.py down      stop, keep data
     python scripts/dev.py reset     stop and delete all data, including the week's files
-    python scripts/dev.py test      unit and contract tests (no stack needed)
+    python scripts/dev.py ingest    take in the week's statement files, then deliver its webhooks to the API
+    python scripts/dev.py test      unit, contract and database tests (database tests skip without the stack)
     python scripts/dev.py itest     contract tests against the running Fineract and Odoo
     python scripts/dev.py lint      ruff
     python scripts/dev.py urls      where everything is
@@ -23,6 +24,7 @@ URLS = """
   Fineract API   http://127.0.0.1:18080/fineract-provider/api/v1   (tenant: default, user from .env)
   Odoo ledger    http://127.0.0.1:18069                             (database: ledger, user from .env)
   Jaeger         http://127.0.0.1:16686
+  API            http://127.0.0.1:18000/docs
   Postgres       127.0.0.1:15432
   Week's files   data/inbox/   (truth for evals: data/truth/)
 """
@@ -83,9 +85,26 @@ def ensure_env() -> None:
         print("added to .env:", ", ".join(added))
 
 
+def test_database_url() -> str:
+    env = ROOT / ".env"
+    if not env.exists():
+        return ""
+    values = dict(line.split("=", 1) for line in env.read_text().splitlines() if "=" in line and not line.startswith("#"))
+    return f"postgresql://repaydesk:{values.get('REPAYDESK_DB_PASSWORD', '')}@127.0.0.1:15432/repaydesk"
+
+
+def ensure_data_dir() -> None:
+    # Docker would create the bind-mounted folder as root on Linux; the containers run as non-root.
+    data = ROOT / "data"
+    data.mkdir(exist_ok=True)
+    if os.name != "nt":
+        data.chmod(0o777)
+
+
 def main(task: str) -> None:
     if task == "up":
         ensure_env()
+        ensure_data_dir()
         run("docker", "compose", "up", "-d", "--wait")
         run("docker", "compose", "run", "--rm", "--build", "seed")
         print(URLS)
@@ -100,8 +119,13 @@ def main(task: str) -> None:
     elif task == "reset":
         run("docker", "compose", "down", "-v")
         shutil.rmtree(ROOT / "data", ignore_errors=True)
+    elif task == "ingest":
+        run("docker", "compose", "run", "--rm", "--build", "ingest")
+        run("docker", "compose", "run", "--rm", "ingest", "python", "-m", "repaydesk.ingest",
+            "--replay-webhooks", "http://api:8000")
     elif task == "test":
-        run(python(), "-m", "pytest", "-q", cwd=CORE)
+        # Database tests use the compose Postgres when it is up; without it they skip.
+        run(python(), "-m", "pytest", "-q", cwd=CORE, env={"REPAYDESK_TEST_DATABASE_URL": test_database_url()})
     elif task == "itest":
         run(python(), "-m", "pytest", "-q", "-m", "integration", cwd=CORE, env={
             "FINERACT_URL": "http://127.0.0.1:18080/fineract-provider/api/v1",

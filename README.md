@@ -7,7 +7,8 @@ approve everything that moves money or reaches a customer.
 It runs on open-source finance systems: **Apache Fineract** as core banking and **Odoo
 Community** as the ledger. Every borrower, loan and payment in it is synthetic.
 
-> Status: milestone 1 of 6 (foundations and data). See [the roadmap](#roadmap).
+> Status: milestone 2 of 6 in progress. Built in chunks, each verified and logged in
+> [`CHUNK-LOG.md`](CHUNK-LOG.md). See [the roadmap](#roadmap).
 
 ## The problem
 
@@ -40,11 +41,12 @@ collection journals in Odoo, and writes a week of incoming payments to `data/inb
 |---|---|
 | Fineract API | http://127.0.0.1:18080/fineract-provider/api/v1 (tenant `default`) |
 | Odoo ledger | http://127.0.0.1:18069 (database `ledger`) |
-| Jaeger traces | http://127.0.0.1:16686, service `repaydesk-seed` |
+| Jaeger traces | http://127.0.0.1:16686 |
+| Repaydesk API | http://127.0.0.1:18000/docs |
 | Postgres | 127.0.0.1:15432 |
 | The week's payment files | `data/inbox/` |
 
-Other tasks: `seed`, `down`, `reset`, `test`, `itest`, `lint`, `urls`
+Other tasks: `seed`, `ingest`, `down`, `reset`, `test`, `itest`, `lint`, `urls`
 (`python scripts/dev.py <task>`).
 
 On Windows, use `127.0.0.1` rather than `localhost`; `localhost` tries IPv6 first and adds
@@ -90,6 +92,11 @@ Built so far (milestone 1):
   messy lines, with the truth kept apart.
 - **Repaydesk's database** with an append-only audit log enforced by a trigger.
 - **Tracing**: the seed is one trace in Jaeger, with a span per borrower and loan loaded.
+- **Ingestion** (chunk 2): `python scripts/dev.py ingest` takes in the week's statement files,
+  then delivers the provider's webhooks to the API one request at a time. Each line is stored
+  once. A redelivered webhook or a resent statement is kept as a duplicate pointing at its
+  original, and the database's unique index decides, not a check in code. A forged webhook gets a 401
+  and stores nothing.
 - **CI**: lint and tests on every push. On main, the full stack comes up, gets seeded, and
   the contract tests run against it.
 
