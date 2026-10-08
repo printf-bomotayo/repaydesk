@@ -43,7 +43,7 @@ collection journals in Odoo, and writes a week of incoming payments to `data/inb
 | Fineract staff screens | http://127.0.0.1:18081 (Mifos X web app; login `mifos` / `password`, tenant `default`) |
 | Odoo ledger | http://127.0.0.1:18069 (database `ledger`, login `admin` / `admin`; Invoicing → Accounting → Journal Entries) |
 | Jaeger traces | http://127.0.0.1:16686 |
-| Repaydesk API | http://127.0.0.1:18000/docs |
+| Repaydesk API | http://127.0.0.1:18000/docs (sign in as `amaka` or `kunle`, officers; `tunde`, supervisor; `hadiza`, auditor; password `STAFF_DEMO_PASSWORD` in `.env`) |
 | Postgres | 127.0.0.1:15432 |
 | The week's payment files | `data/inbox/` |
 
@@ -106,6 +106,12 @@ Built so far (milestone 1):
   credits. `python scripts/dev.py score` checks every proposal against the truth file. Rules cover
   about 60% of lines and have made no wrong proposal across 100 generated books (35,053 lines). The rest
   waits for the investigator agent.
+- **Approvals** (chunk 4): staff sign in and work a review queue, largest payment first.
+  One approval settles a payment up to ₦500,000. Above that, two different people approve, and
+  one of them must have a limit that covers the amount: officers ₦500,000, supervisors ₦5,000,000,
+  auditors read only. A rejection needs a reason and hands the line to the agent; rules never
+  propose it again. An approved match goes to the posting outbox in the same transaction, with the
+  idempotency key the gateway will post under. See [ADR 0005](docs/adr/0005-approval-rules.md).
 - **CI**: lint and tests on every push. On main, the full stack comes up, gets seeded, and
   the contract tests run against it.
 

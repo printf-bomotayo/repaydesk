@@ -213,7 +213,11 @@ def save(conn: psycopg.Connection, p: Proposal) -> int:
 
 def run(conn: psycopg.Connection, matcher: RuleMatcher) -> dict[str, int]:
     counts: dict[str, int] = {}
-    rows = conn.execute(f"SELECT {LINE_COLUMNS} FROM payment_lines WHERE status = 'new' ORDER BY value_date, id")
+    # A line a person rejected is the agent's to investigate: rules would only propose the same answer again.
+    rows = conn.execute(
+        f"SELECT {LINE_COLUMNS} FROM payment_lines l WHERE status = 'new' AND NOT EXISTS "
+        "(SELECT 1 FROM proposals p WHERE p.line_id = l.id AND p.status = 'rejected') ORDER BY value_date, id"
+    )
     with tracer.start_as_current_span("match.rules") as span:
         for row in rows.fetchall():
             line = _line(row)

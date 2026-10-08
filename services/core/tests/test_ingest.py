@@ -82,14 +82,8 @@ def test_two_deliveries_at_the_same_moment_make_one_original(schema_url, week_di
         try:
             with db.connect(schema_url) as c:
                 barrier.wait()
-                for attempt in range(5):
-                    try:
-                        with c.transaction():
-                            store_line(c, line)
-                        return
-                    except psycopg.errors.UniqueViolation:  # lost the race for the next #n; try again
-                        if attempt == 4:
-                            raise
+                with c.transaction():  # no retry: duplicates of one reference take turns
+                    store_line(c, line)
         except Exception as e:  # noqa: BLE001
             errors.append(e)
 

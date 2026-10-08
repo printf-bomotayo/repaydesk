@@ -149,7 +149,17 @@ Two ways in, one way to store:
 *The database decides what is a duplicate.* A partial unique index allows one original per
 reference (`payment_lines_one_original`). An insert that loses becomes a duplicate. Checking first
 and then inserting would let two simultaneous deliveries of one event both become originals. A test
-fires six at once and gets exactly one.
+fires six at once and gets exactly one original and five duplicates, with no retries.
+
+*Simultaneous sightings wait, they don't fail.* The original's insert has no conflict target, so a
+clash on the line's id counts as well as a clash on the reference: the later delivery waits for the
+earlier one, then becomes its duplicate. Duplicates are numbered `#2`, `#3` and so on; two that count
+the same number take turns, and the one that loses tries the next free number. _Corrected in chunk 4:
+the first version raised a unique violation about one run in eight under six simultaneous deliveries,
+which the test's retry loop had hidden. A webhook has no retry loop, so the provider would have got a
+500. A transaction-scoped lock per reference was tried and dropped. A statement file is one
+transaction, and Postgres's shared lock table (64 per connection by default) would run out on a
+file of a few thousand lines._
 
 *Duplicates are kept, not dropped.* Dropping a redelivery would leave no trace that it happened. When
 a provider later says it sent something twice, or a bank resends a statement, the record shows it
@@ -194,7 +204,8 @@ and trigger:
 - the week's files ingest once, and a second run skips every file;
 - every stored line's id equals its truth key;
 - a resent statement under a new name produces only duplicates, each `#2` of its original;
-- six simultaneous deliveries of one event produce one original and five duplicates;
+- six simultaneous deliveries of one event produce one original and five duplicates, without retrying
+  (40 runs in a row since the chunk 4 correction);
 - every file leaves an audit row, and `UPDATE` or `DELETE` on the audit log is refused;
 - the webhook stores a delivery, then recognises its redelivery;
 - a forged delivery gets a 401, stores nothing, and is recorded as rejected;
@@ -372,7 +383,7 @@ values from `.env.example`; change them in `.env`.
 | Fineract, API reference | Swagger UI, built in | http://127.0.0.1:18080/fineract-provider/swagger-ui/index.html | as above, on each call | Any endpoint the adapter uses |
 | Odoo | The full Odoo web app, built in | http://127.0.0.1:18069 | `admin` / `admin` | **Invoicing → Accounting → Journal Entries** (the opening entry); **Chart of Accounts** |
 | Jaeger | Trace search, built in | http://127.0.0.1:16686 | none | Service `repaydesk-ingest`, operation `ingest.replay_webhooks`: one trace across ingest and the API |
-| Repaydesk API | FastAPI's docs, built in | http://127.0.0.1:18000/docs | none yet (chunk 4) | `POST /webhooks/payrail` |
+| Repaydesk API | FastAPI's docs, built in | http://127.0.0.1:18000/docs | staff sign-in from chunk 4: `POST /auth/sign-in`, then **Authorize** with the token | `GET /queue`; `POST /webhooks/payrail` |
 | Langfuse (optional) | Model-call traces | http://127.0.0.1:3000 | `admin@repaydesk.local`, password in `.env` | Generations, from milestone 3 |
 
 Useful direct links in the staff screens, which the app routes by id:
@@ -415,7 +426,7 @@ answers live here.
 **Files.** Changed: `compose.yaml` (the `mifos` service), `scripts/dev.py` (URL list), `README.md`
 (addresses and logins for every UI).
 
-**Depends on / blocks.** Depends on chunk 1 (Fineract). Blocks nothing; the gateway demo in chunk 6
+**Depends on / blocks.** Depends on chunk 1 (Fineract). Blocks nothing; the end-to-end demo in chunk 9
 uses it to show a posted repayment landing on the loan.
 
 **Verification.** In the browser: signed in, opened a borrower, the loan's repayment schedule and its
@@ -437,5 +448,140 @@ lacks would fail there, not elsewhere.
 
 **Plan.** Supports milestone 2's demo (a posted repayment visible in core banking) and milestone 6's
 hosted demo.
+
+---
+
+## Chunk 4 — approvals: roles, limits, two people, and the outbox ✅
+
+_Date: 2026-10-09_
+
+**What & why.** _Metaphor: a bank's cheque-signing mandate._ A company's mandate says who may sign
+cheques and up to how much: any one director below a figure, two above it, and at least one of
+them a director whose authority covers the sum. The cashier checks the signatures against the
+mandate before paying, not after. Once a cheque is paid, its counterfoil goes in the book.
+
+Repaydesk's proposals are those cheques. Until now a proposal sat in the database with nobody able
+to act on it. This chunk adds the mandate and the cashier's check:
+
+- **Staff with roles and limits.** Officers ₦500,000, supervisors ₦5,000,000, auditors read only. Four
+  demo reviewers (`amaka`, `kunle`, `tunde`, `hadiza`) are created on the API's first start, sharing
+  `STAFF_DEMO_PASSWORD` from `.env`.
+- **Sign-in.** `POST /auth/sign-in` checks a scrypt hash and returns a signed token valid for eight
+  hours. Every request reads the staff row again, so a deactivated account stops at once. It stands
+  in for the bank's single sign-on.
+- **The review queue.** `GET /queue` lists pending proposals, largest payment first. Each item carries
+  the line, the proposal and its evidence, the approvals so far, how many are needed, and for the
+  person asking: whether they may approve, whether theirs would settle it, and if not, why.
+- **Decisions.** `POST /proposals/{id}/approve` and `/reject`. The rules are in
+  [ADR 0005](docs/adr/0005-approval-rules.md):
+  - one approval up to ₦500,000;
+  - two different people above it, at least one with a limit covering the amount;
+  - nobody decides twice, and only a pending proposal can be decided;
+  - a rejection needs a reason.
+- **The outbox.** An approved match is written to `posting_outbox` in the same transaction as the
+  approval. The row carries the loans and amounts, who approved, and the idempotency key `RD-P<id>`
+  that becomes Fineract's external id and Odoo's entry reference when the gateway posts it (chunk 8).
+  An approved exclusion moves no money, so its line is just marked `excluded`.
+- **A rejected line goes to the agent.** Rule matching now skips any line with a rejected proposal.
+  A person has said the obvious answer is wrong, so proposing it again would be noise.
+
+**Decisions worth recording.**
+
+*One function decides, and the screen asks it too.* `approvals.judge` takes a person, an amount and
+the approvals so far. It has no database, so the queue uses it to grey out a button and explain
+why, and the approve call uses it to enforce the rule. The screen and the rule can't drift apart.
+
+*The approval and the hand-off are one transaction.* If the outbox row were written separately,
+a crash between the two would leave either an approval the gateway never sees, or a posting
+nobody approved. Locking the proposal and its line (`FOR UPDATE`) makes two reviewers clicking at
+once take turns. The second one is told the proposal is already approved.
+
+*The first approver can be anyone allowed to decide.* An officer can vouch for a ₦2.5m line and a
+supervisor completes it. Two officers can't settle what neither could approve alone. A supervisor's
+first approval lets an officer give the second. What matters is that someone with authority for
+the sum signed.
+
+*Each decision keeps the decider's limit at the time.* If a limit changes later, history still
+shows who was allowed to approve what.
+
+*Exclusions follow the same limits.* Wrongly excluding a ₦2.5m reversal costs as much as wrongly
+posting it, so an exclusion is judged by the line's amount like any other proposal.
+
+**A race found on the way, in chunk 2.** Running the whole suite turned up chunk 2's
+concurrent-delivery test failing about one run in eight. Six deliveries of one webhook at once could
+clash on the line's id, or two could claim the same duplicate number. The test retried and hid it,
+but the webhook endpoint doesn't retry, so the provider would have got a 500. Fixed in `store_line`
+without locks, and the test's retry loop removed. The details are corrected in chunk 2's section.
+
+**Principles.** _Same mandate metaphor._ *Check the mandate before paying, not after* — the rules run
+inside the transaction that would act on them. *Two signatures, one with authority* — the second
+pair of eyes needs a limit to back it, or it's a ritual. *The counterfoil is written with the
+cheque* — approval and hand-off commit together or not at all. *Least privilege by role* — an auditor
+can see every decision and make none.
+
+**Files.** New: `services/core/src/repaydesk/approvals.py`, `staff.py`,
+`migrations/004_approvals.sql`, `tests/test_approvals.py`, `docs/adr/0005-approval-rules.md`.
+Changed: `api.py` (sign-in, `/me`, `/queue`, `/proposals/{id}`, approve, reject), `match.py` (skips
+rejected lines), `ingest.py` (the race fix), `tests/test_ingest.py`, `compose.yaml` and `.env.example`
+(`STAFF_DEMO_PASSWORD`, `SESSION_SECRET`), `README.md`.
+
+**Depends on / blocks.** Depends on chunk 3's proposals. Blocks chunk 5 (the web app signs in here
+and shows the queue) and chunk 8 (the gateway drains the outbox).
+
+**Verification.** `ruff` clean. `pytest`: 81 passed, 7 deselected. The 18 new tests cover:
+
+- the rules as a pure function: the threshold exactly and a kobo over it, an officer vouching and a
+  supervisor completing, two officers refused, a supervisor first letting an officer finish,
+  nobody approving twice, auditors refused, and an amount above every limit waiting;
+- tokens that expire, can't be forged and can't be signed with another secret; hashed passwords;
+- against Postgres:
+  - an approved match reaches the outbox with its key and audit rows;
+  - a large payment needs two people;
+  - an approved exclusion posts nothing;
+  - a rejection needs a reason and is never re-proposed by rules;
+  - the database refuses a reasonless rejection, a second decision by one person, and an auditor
+    with a limit;
+  - two people approving at once give one posting;
+- over HTTP: no token, a bad token, a wrong password and an unknown user all get 401. A scripted
+  morning in the queue covers ordering, read-only auditors, the two-person flow, a reasonless
+  rejection (422), approving a rejected proposal (409), and the proposal's full history.
+
+Both concurrency tests passed 40 runs in a row.
+
+On the seeded stack, against the rebuilt API:
+
+- a request without a token got a 401;
+- the queue listed the 218 rule proposals (200 per page), 23 of them needing two people;
+- Hadiza was refused as read only;
+- Amaka approved a ₦375,500 match, which went to the outbox as `RD-P110`;
+- on the largest line, a ₦1,821,833 reversal proposed for exclusion, Amaka gave the first approval.
+  Kunle was refused (`over_limit`). Tunde's approval settled it, and the line was marked excluded
+  with no outbox row;
+- Tunde rejected a virtual-account match for "Wrong borrower". Running matching again offered that
+  line to no rule (133 left for the agent, as before);
+- scoring: 217 of 351 lines proposed, 0 wrong.
+
+What it does not prove: that anything posts. The outbox fills, and nothing drains it until the
+gateway in chunk 8. Sign-in has no lockout after failed attempts. That is acceptable for throwaway
+demo logins; a bank would use its single sign-on (plan, stage 4).
+
+**PR package.**
+
+- Subject: `Chunk 4: approvals with roles, limits and two-person approval, and the posting outbox`
+- Description:
+  > Adds staff sign-in and the review queue API. Officers approve up to ₦500,000, supervisors up to
+  > ₦5,000,000, and auditors only read. Above ₦500,000 two different people approve, and one of
+  > them must have a limit that covers the amount. Rejections need a reason, and rules never
+  > re-propose a rejected line. The rules live in one pure function used both to show the queue
+  > and to enforce decisions.
+  >
+  > An approved match is written to a posting outbox in the same transaction as the approval,
+  > with the idempotency key the gateway will post under (chunk 8). An approved exclusion just
+  > marks its line.
+  >
+  > Also fixes a race in chunk 2's ingestion: simultaneous deliveries of one webhook could fail
+  > with a unique violation instead of being recorded as duplicates.
+
+**Plan.** Milestone 2, rules, approvals and gateway: the approval queue with role limits.
 
 ---

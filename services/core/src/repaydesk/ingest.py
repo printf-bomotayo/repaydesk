@@ -72,9 +72,11 @@ def store_line(conn: psycopg.Connection, line: PaymentLine, file_id: int | None 
               line.customer_reference, key)
     columns = ("channel, file_id, source_account, value_date, amount_kobo, narration, bank_reference, payer_name, "
                "payer_account, virtual_account, terminal_id, customer_reference, dedupe_key")
+    # No conflict target: two first sightings arriving together clash on the id as well as on the
+    # reference, and either way the later one waits for the earlier, then becomes its duplicate.
     row = conn.execute(
         f"INSERT INTO payment_lines (id, {columns}) VALUES (%s, {', '.join(['%s'] * len(values))}) "
-        "ON CONFLICT (dedupe_key) WHERE status <> 'duplicate' DO NOTHING RETURNING id",
+        "ON CONFLICT DO NOTHING RETURNING id",
         (key, *values),
     ).fetchone()
     if row:
@@ -84,14 +86,17 @@ def store_line(conn: psycopg.Connection, line: PaymentLine, file_id: int | None 
     original = conn.execute(
         "SELECT id FROM payment_lines WHERE dedupe_key = %s AND status <> 'duplicate'", (key,)
     ).fetchone()[0]
-    n = conn.execute("SELECT count(*) FROM payment_lines WHERE dedupe_key = %s", (key,)).fetchone()[0] + 1
-    dup_id = f"{key}#{n}"
-    conn.execute(
-        f"INSERT INTO payment_lines (id, {columns}, status, duplicate_of) "
-        f"VALUES (%s, {', '.join(['%s'] * len(values))}, 'duplicate', %s)",
-        (dup_id, *values, original),
-    )
-    return Stored(dup_id, original)
+    # Sightings arriving together may count the same n; whoever loses waits, then takes the next one.
+    for _ in range(100):
+        n = conn.execute("SELECT count(*) FROM payment_lines WHERE dedupe_key = %s", (key,)).fetchone()[0] + 1
+        row = conn.execute(
+            f"INSERT INTO payment_lines (id, {columns}, status, duplicate_of) "
+            f"VALUES (%s, {', '.join(['%s'] * len(values))}, 'duplicate', %s) ON CONFLICT DO NOTHING RETURNING id",
+            (f"{key}#{n}", *values, original),
+        ).fetchone()
+        if row:
+            return Stored(row[0], original)
+    raise RuntimeError(f"could not number a duplicate of {key}")
 
 
 def ingest_file(conn: psycopg.Connection, source: FolderStatementSource, path: Path) -> FileResult:

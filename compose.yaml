@@ -188,6 +188,8 @@ services:
       OTEL_SERVICE_NAME: repaydesk-api
       REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
       PAYRAIL_WEBHOOK_SECRET: ${PAYRAIL_WEBHOOK_SECRET:-dev-only-payrail-secret}
+      STAFF_DEMO_PASSWORD: ${STAFF_DEMO_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
     ports:
       - "127.0.0.1:18000:8000"
     healthcheck:
