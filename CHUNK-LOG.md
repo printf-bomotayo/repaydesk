@@ -646,6 +646,13 @@ When nginx rewrites a path, it decodes and re-encodes it first, which can mangle
 `proxy_pass` carries no path and the request goes through byte for byte; a small ASGI middleware
 in the API drops the prefix. A test fetches a `#` id through `/api` with the browser's encoding.
 
+*The proxy looks the API up as requests come in.* _Corrected after chunk 7._ As first written,
+nginx looked up the `api` hostname once, when it started. Chunk 7 recreated the API container,
+which got a new address, and every `/api` request from the app was refused (a 502) until `web`
+restarted. nginx now asks Docker's DNS (`127.0.0.11`), with answers kept 10 seconds, and
+`proxy_pass` names the API through a variable so the lookup happens per request. The path still
+goes through untouched. Checked by recreating the API at a new address with `web` left running.
+
 *"All" means money, not deliveries.* The first look at the running app showed 648 lines, 297 of
 them duplicates. They are correct records: the webhook week was replayed three times while chunk
 2 was verified, and every redelivery was kept. But a provider retrying a webhook ten times is not
