@@ -78,6 +78,13 @@ This chunk builds the simulator:
   expected 33). The seeder would have dated a book a day behind Fineract in the same hour. Everything
   now takes the date from `domain.bank_today()` (`BANK_TIMEZONE`, default `Africa/Lagos`), with
   `tzdata` as a dependency because Windows has no time zone database. _Corrected in chunk 4._
+- *Odoo's generic chart already uses six of Repaydesk's account codes.* 110100 to 110500 are its
+  stock accounts and 131000 is "Tax Paid", so the seeder found them and created nothing: the
+  collection accounts and loan principal carried Odoo's names, and the collection accounts weren't
+  of type cash. Balances were on the right codes; the names were wrong. Setup now renames and
+  retypes an existing account to Repaydesk's, and an Odoo contract test checks every code.
+  The contract tests' ledger setup also renamed the demo's company to "Contract Test Bank"; it now
+  uses `BANK_NAME`. _Corrected in chunk 8, whose first postings showed it._
 
 **Principles.** _Same simulator metaphor._ *Practise on the real instruments* — integration work
 against mocks proves the mocks. *One contract, two implementations* — every contract test runs against
@@ -1011,5 +1018,177 @@ What it does not prove:
 
 **Plan.** Milestone 2, rules, approvals and gateway: the records a reviewer checks before
 deciding, on screen.
+
+---
+
+## Chunk 8 — the posting gateway ✅
+
+_Date: 2026-10-09_
+
+**What & why.** _Metaphor: the settlement clerk with the numbered stamp._ In a bank's back office,
+an approved voucher goes to one clerk, the only person with the stamp for the ledgers. Before
+stamping, the clerk checks the signatures against the mandate again; the voucher's word isn't
+enough. Each voucher carries a number, so if the clerk is called away mid-entry, they look the
+number up on return and finish the entry instead of making it twice. If the ledger room is locked,
+the voucher waits in the tray; if the ledger refuses it, it goes back to a supervisor.
+
+Until now, approved payments sat in the outbox with nobody to post them. This chunk adds the clerk:
+
+- **The gateway** (`services/gateway`, .NET 10), the only writer to Fineract and the ledger
+  (ADR 0002). Postgres wakes it the moment a match is approved (`NOTIFY posting_outbox`, raised by
+  a trigger); a 15-second poll catches retries.
+- **For each approved payment** it rechecks the approval against the decisions themselves, posts
+  the repayment to Fineract under the idempotency key, posts a journal entry to Odoo that credits
+  the loan exactly as Fineract split it (principal, interest, charges, overpayment), and marks the
+  line posted, with its audit row, in one transaction.
+- **Failures are sorted.** An outage (a timeout, a 5xx, a login problem) is retried from 10 seconds
+  up to every 10 minutes, with the error and whatever Fineract already took on the row. A refusal (a
+  closed loan, an approval the decisions don't support) stops and waits for a person.
+- **Each service has its own Fineract login.** The seed creates `repaydesk-read`, read only, for the
+  API, the directory and rule matching, and `repaydesk-gateway`, which may read a loan and post a
+  repayment, nothing else. Until now everything used the admin login, so ADR 0002's "one writer"
+  was a convention; Fineract now enforces it.
+- **The case file** shows the posting: Fineract's repayment per loan with its split, the ledger
+  entry's name, the attempts, the next attempt, or why it stopped.
+
+**Decisions worth recording.** [ADR 0007](docs/adr/0007-posting-gateway.md).
+
+*Hold the row while posting.* The gateway locks one outbox row (`FOR UPDATE SKIP LOCKED`) and
+keeps the lock while it calls Fineract and Odoo, then writes the result in the same transaction.
+There is no "claimed" state to expire: a crash drops the lock and the row is pending again
+(migration 006 removes `claimed`). Two gateways each take a different row.
+
+*Look before writing.* Each write is looked up by its key first: the repayment by Fineract's
+transaction external id, the entry by its reference, and an entry left as a draft is posted. That
+is what makes a retry safe, not matching error text. A split posts one repayment per loan,
+`RD-P110-1`, `RD-P110-2`, because Fineract's external ids are unique per transaction; a single loan
+keeps `RD-P110`, as the screens already show it.
+
+*Don't trust the outbox row.* The gateway reapplies ADR 0005's rules to the proposal, the line and
+the decision rows: the right kind and status, amounts that add up and match what was approved, the
+people named being the people who decided, enough of them, one with the limit. A row written by
+anything else is refused and never posted.
+
+*Fineract first; the ledger follows its split.* Fineract decides how a repayment applies (interest
+first, then any overpayment). The journal entry is built from Fineract's own answer, so the two
+books can't disagree about it.
+
+*Odoo shares one login.* Odoo Community has no fine-grained roles over JSON-RPC, so the seed and the
+gateway share its admin login and nothing else has it.
+
+**Found on the way.**
+
+- *Odoo's generic chart already used six of our account codes*, so loan principal was named "Tax
+  Paid" and the collection accounts carried stock account names. Balances were on the right codes,
+  the names wrong. Fixed in the Odoo adapter's setup, with a contract test; corrected in chunk 1's
+  section.
+- *Fineract echoes a rejected password in its error.* Its password rule (12 to 50 characters, mixed
+  case, a digit, a symbol, no character twice in a row) refused a generated one, and the error
+  carried it. Setting up a login now checks the rule first and keeps only Fineract's messages;
+  `scripts/dev.py` generates passwords that meet it, and CI makes its `.env` the same way.
+- *The OpenTelemetry collector and Jaeger weren't running* on the local stack, so the seed's traces
+  had nowhere to go. Started again for this check.
+
+**Principles.** _Same settlement-clerk metaphor._ *One stamp, one clerk*: write access is a login
+only the gateway has, not a promise. *Check the mandate at the ledger door*: the writer verifies
+the approval itself. *Number the voucher before it moves*: idempotency keys turn a retry into a
+lookup. *Copy the bank's own arithmetic*: the ledger takes core banking's split rather than
+computing its own. *A refusal goes to a person; an outage goes back in the tray.*
+
+**Files.**
+
+- New:
+  - `services/gateway/` (solution; `src/Repaydesk.Gateway`: `Program.cs`, `Drainer.cs`, `Outbox.cs`,
+    `Mandate.cs`, `Ledger.cs`, `Fineract.cs`, `Odoo.cs`, `Model.cs`, `Settings.cs`; `tests/`;
+    `Dockerfile`, `README.md`);
+  - `migrations/006_gateway.sql`, `docs/adr/0007-posting-gateway.md`.
+- Changed:
+  - `adapters/fineract.py` (service logins, the password rule), `adapters/odoo.py` (setup corrects
+    accounts), `adapters/chart.py` (charges income, 420000), `seed.py` (creates the logins),
+    `records.py` (a split's keys link to their line), `views.py` (the posting's details);
+  - `tests/test_records.py`, `tests/contract/test_contracts.py`;
+  - `web/src/api.ts`, `pages/LineDetail.tsx` (the posting panel and trail labels), `App.test.tsx`;
+  - `compose.yaml` (the `gateway` service; the read-only login for `api`, `directory`, `match`),
+    `.env.example`, `scripts/dev.py` and `Makefile` (`env`, `gateway`), `.github/workflows/ci.yml`
+    (a gateway job; the stack job posts an approved match), `README.md`.
+
+**Depends on / blocks.** Depends on chunk 4 (the outbox and decisions), chunk 1 (Fineract and
+Odoo) and chunk 5 (the case file). Blocks chunk 9: the end-to-end demo and the Today page, which
+lists failed postings for a person.
+
+**Verification.** `ruff` clean. `pytest`: 101 passed, two new. Contract tests against Fineract and
+Odoo: 9 passed, one new (every account Repaydesk posts to carries its name and type). `vitest`: 25
+passed, one new (a posted case file and a failed one). `tsc` clean.
+
+The gateway's own tests, `dotnet test`: 30 passed, warnings as errors.
+
+- The rules: the threshold and a kobo over it, an officer and a supervisor, two officers refused, a
+  row naming people who didn't decide, an auditor's approval, a rejection, amounts that don't add up
+  or differ from the proposal.
+- The ledger entry from Fineract's split, including charges and an overpayment; a split that
+  disagrees stops before the ledger.
+- The Fineract client against canned responses: found, not found, posted and read back; a closed
+  loan or a bad date stops; a missing privilege, a 401, a 5xx or no answer retries; a reversed
+  repayment isn't taken as posted.
+- Against Postgres with the real migrations:
+  - an approved match reaches both books and the line is posted;
+  - a crash between the books resumes on time without posting twice, and the row shows what
+    Fineract took meanwhile;
+  - a forged row and a large payment with one approval are refused;
+  - a refusal from core banking waits for a person;
+  - a split posts a repayment per loan and one entry;
+  - two gateways over 30 payments post each once;
+  - an approval wakes the gateway;
+  - the database refuses a "posted" row without both books.
+- Two deliberate breaks to prove the tests bite: without `SKIP LOCKED` the two-gateway test fails;
+  without the look-before-posting the crash test fails.
+
+On the running stack:
+
+- **The waiting payments.** The gateway started and posted the three approved payments waiting
+  since chunks 4 to 6, about a second apart. Odoo's loan principal fell ₦1,370,500 and interest
+  income rose ₦336,000, exactly Fineract's split; the collection accounts rose by the channels'
+  amounts.
+- **A live approval.** Tunde approved a ₦363,000 POS payment: posted in both books 3.5 seconds
+  after the click.
+- **Odoo stopped.** Another approval posted to Fineract and was retried at 10 and 30 seconds. It
+  completed on the third attempt once Odoo was back, with exactly one Fineract repayment.
+- **The case file** in the browser showed that whole story: the approval, the hand-off, two
+  retries, posted, the ledger entry and Fineract's split. No console errors.
+- **The loan page,** read live through the read-only login, shows the repayment as posted and
+  linked to its line, no longer held.
+- **The logins.** The read-only login is refused a repayment (403). The gateway's login is refused
+  reading clients, creating one, and undoing a repayment.
+- **Jaeger** has each posting as one trace: the database, Fineract's calls, Odoo's calls.
+
+What it does not prove:
+
+- **A split live.** No rule proposes a split today, so splits are proven by the tests only.
+- **A failed posting handled by a person.** It shows on the case file; the Today page and a retry
+  action arrive in chunk 9.
+- **Lists right after a posting.** Borrower and loan lists read the directory's copy, so for up to
+  15 minutes a just-posted payment shows in neither "not yet posted" nor the copy's balance. A
+  record's own page reads Fineract and is right at once.
+- **Load.** The gateway holds a transaction through a second or two of HTTP per posting. Fine for a
+  demo; a bank's volume would run several gateways, which the lock already allows.
+- **Odoo's own permissions.** The gateway uses Odoo's admin login (see above).
+
+**PR package.**
+
+- Subject: `Chunk 8: the posting gateway (.NET), and a login per service in Fineract`
+- Description:
+  > Adds the posting gateway, a .NET 10 service and the only writer to Fineract and the ledger.
+  > Woken by Postgres when a match is approved, it rechecks the approval against the decisions,
+  > posts the repayment to Fineract under the payment's idempotency key, posts a journal entry to
+  > Odoo crediting the loan as Fineract split it, and marks the line posted with its audit row, in
+  > one transaction holding the outbox row's lock. Writes are looked up by key before they're made,
+  > so a crash or retry never posts twice; outages retry with backoff, refusals wait for a person.
+  >
+  > Each service now has its own Fineract login: read only for the API, directory and matching, and
+  > repayments only for the gateway. Also fixes chunk 1's Odoo setup, which left six accounts with
+  > Odoo's generic names ("Tax Paid" for loan principal). ADR 0007 records the design.
+
+**Plan.** Milestone 2, rules, approvals and gateway: the .NET posting gateway, and approved matches
+visible in Fineract and Odoo.
 
 ---

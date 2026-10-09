@@ -13,6 +13,7 @@ Fineract quirks this adapter absorbs, so nothing above it has to know:
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections.abc import Iterable, Iterator
@@ -41,6 +42,12 @@ SHORT_NAMES = {"QUICK": "QUIK", "SME": "SME"}  # Fineract allows four characters
 BUSINESS_TABLE = "client_business"
 PAGE = 500
 TRADING_NAMES_REREAD_SECONDS = 24 * 3600
+# Fineract's own rule for user passwords (validation.msg.user.password.does.not.match.regexp).
+# What each of Repaydesk's own Fineract logins may do (ADR 0002). Reads for the API, the directory
+# and rule matching; one write, a repayment, for the posting gateway.
+READ_ONLY = ("ALL_FUNCTIONS_READ",)
+POSTING = ("READ_LOAN", "REPAYMENT_LOAN", "READ_PAYMENTTYPE")
+PASSWORD_POLICY = r"(?!.*(.)\1)(?!.*\s)(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[^\w\s]).{12,50}"
 
 
 def _naira(kobo: int) -> str:
@@ -146,6 +153,42 @@ class FineractCoreBanking:
                     "multiRow": False,
                     "columns": [{"name": "trading_name", "type": "String", "length": 120, "mandatory": False}],
                 })
+
+    def ensure_service_user(self, username: str, password: str, role: str, permissions: Iterable[str]) -> None:
+        """A login for one of Repaydesk's services, with a role that grants only `permissions`
+        (ADR 0002: only the posting gateway may write). Re-running resets the role's permissions
+        and the password, so both follow the configuration."""
+        if not re.fullmatch(PASSWORD_POLICY, password):
+            raise ValueError(f"the password for {username} doesn't meet Fineract's policy: 12 to 50 characters with "
+                             "upper and lower case, a digit and a symbol, no spaces, no character twice in a row")
+        try:
+            self._ensure_service_user(username, password, role, permissions)
+        except FineractError as e:
+            # Fineract echoes a rejected password back in its error; keep only the messages.
+            errors = e.body.get("errors", []) if isinstance(e.body, dict) else []
+            messages = "; ".join(x.get("defaultUserMessage", "") for x in errors) or "no detail"
+            raise FineractError(e.status, f"setting up {username}: {messages}") from None
+
+    def _ensure_service_user(self, username: str, password: str, role: str, permissions: Iterable[str]) -> None:
+        with tracer.start_as_current_span("fineract.ensure_service_user") as span:
+            span.set_attribute("fineract.username", username)
+            roles = {r["name"]: r["id"] for r in self._call("GET", "/roles")}
+            if role not in roles:
+                created = self._call("POST", "/roles", {"name": role, "description": f"Repaydesk: {username}"})
+                roles[role] = created["resourceId"]
+            wanted = set(permissions)
+            current = self._call("GET", f"/roles/{roles[role]}/permissions")["permissionUsageData"]
+            changes = {p["code"]: p["code"] in wanted for p in current if p.get("selected") != (p["code"] in wanted)}
+            if changes:
+                self._call("PUT", f"/roles/{roles[role]}/permissions", {"permissions": changes})
+            login = {"password": password, "repeatPassword": password, "roles": [roles[role]],
+                     "passwordNeverExpires": True}
+            users = {u["username"]: u["id"] for u in self._call("GET", "/users")}
+            if username in users:
+                self._call("PUT", f"/users/{users[username]}", login)
+            else:
+                self._call("POST", "/users", {**login, "username": username, "firstname": "Repaydesk",
+                                              "lastname": username, "officeId": 1, "sendPasswordToEmail": False})
 
     @staticmethod
     def _product_body(p: Product) -> dict:

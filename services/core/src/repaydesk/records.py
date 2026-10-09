@@ -189,15 +189,21 @@ def _pending(h: dict) -> dict:
             "reference": h["reference"], "status": h["status"], "line_id": h["line_id"]}
 
 
+def _posting_key(reference: str) -> str | None:
+    """The posting a Repaydesk repayment came from: `RD-P110`, or `RD-P110-2` for a split's second loan."""
+    m = re.fullmatch(r"(RD-P\d+)(?:-\d+)?", reference or "")
+    return m.group(1) if m else None
+
+
 def _link_posted(conn: psycopg.Connection, posted: list[dict]) -> None:
     """A repayment Repaydesk posted carries its idempotency key as its reference: link it to its line."""
-    keys = [p["reference"] for p in posted if p["reference"].startswith("RD-P")]
+    keys = sorted({k for p in posted if (k := _posting_key(p["reference"]))})
     if not keys:
         return
     lines = dict(conn.execute("SELECT idempotency_key, line_id FROM posting_outbox WHERE idempotency_key = ANY(%s)",
                               (keys,)).fetchall())
     for p in posted:
-        p["line_id"] = lines.get(p["reference"])
+        p["line_id"] = lines.get(_posting_key(p["reference"]))
 
 
 # ---- loans -----------------------------------------------------------------------------------------

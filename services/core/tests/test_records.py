@@ -192,6 +192,34 @@ def test_a_loan_shows_its_schedule_and_what_posting_held_lines_would_leave(conn,
     assert records.loan(conn, loan_ref, held)["held_kobo"] == 0  # a rejected proposal holds nothing
 
 
+def test_a_repayment_the_gateway_posted_links_back_to_its_line(conn, held):
+    loan_ref, pid, amount = _held_loan(conn)
+    if approvals.approve(conn, pid, AMAKA).status != "approved":
+        approvals.approve(conn, pid, Staff("tunde", "Tunde Adeyemi", "supervisor", LIMITS["supervisor"]))
+    key, line_id = conn.execute("SELECT idempotency_key, line_id FROM posting_outbox WHERE proposal_id = %s",
+                                (pid,)).fetchone()
+    # What the gateway (services/gateway) does: post under the key, here as a split's first loan,
+    # then mark the line posted.
+    held.post_repayment(loan_ref, AS_OF, amount, f"{key}-1")
+    conn.execute("UPDATE payment_lines SET status = 'posted' WHERE id = %s", (line_id,))
+
+    page = records.loan(conn, loan_ref, held)
+    assert page["held_kobo"] == 0  # posted now, so not held as well
+    [mine] = [p for p in page["money_in"] if p["reference"] == f"{key}-1"]
+    assert (mine["status"], mine["line_id"]) == ("posted", line_id)
+    assert records._posting_key("RD-P12") == records._posting_key("RD-P12-3") == "RD-P12"
+    assert records._posting_key("HIST-0001790") is None
+
+
+def test_a_service_login_must_meet_fineracts_password_rule_before_anything_is_sent():
+    from repaydesk.adapters.fineract import FineractCoreBanking
+
+    core = FineractCoreBanking("http://fineract.invalid/api/v1", "default", "mifos", "password")
+    for weak in ("short-A1", "alllowercase-123", "NoDigits-Here", "NoSymbol123abc", "Repeatted-1xyzab"):
+        with pytest.raises(ValueError, match="policy"):
+            core.ensure_service_user("repaydesk-read", weak, "Repaydesk read only", ["ALL_FUNCTIONS_READ"])
+
+
 def test_loans_by_how_late(conn, held, book):
     page = records.loans(conn, limit=200)
     assert all(type(i["held_kobo"]) is int for i in page["items"])

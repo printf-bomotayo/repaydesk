@@ -80,10 +80,19 @@ class OdooLedger:
             wanted = [(code, name, kind) for code, name, kind in CHART]
             wanted += [(collection_account_code(k), f"Collections: {name}", "asset_cash")
                        for k, (name, _n) in collection_accounts.items()]
+            # Odoo's generic chart already uses some of these codes (110100 is "Stock Valuation",
+            # 131000 "Tax Paid"), so an existing account is renamed and retyped to what Repaydesk
+            # means by it, not taken as it is.
             for code, name, kind in wanted:
-                if not self._account(code, required=False):
+                found = self._x("account.account", "search_read", [["code", "=", code]],
+                                fields=["name", "account_type"], limit=1)
+                if not found:
                     self._accounts[code] = self._x("account.account", "create",
                                                    {"code": code, "name": name, "account_type": kind})
+                    continue
+                self._accounts[code] = found[0]["id"]
+                if (found[0]["name"], found[0]["account_type"]) != (name, kind):
+                    self._x("account.account", "write", [found[0]["id"]], {"name": name, "account_type": kind})
 
             for key, (name, number) in collection_accounts.items():
                 code = JOURNAL_CODES[key]

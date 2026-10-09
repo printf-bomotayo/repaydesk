@@ -106,12 +106,27 @@ export interface LineDetail {
   posting: {
     outbox_id: number;
     idempotency_key: string;
-    status: "pending" | "claimed" | "posted" | "failed";
+    status: "pending" | "posted" | "failed";
     attempts: number;
     last_error: string | null;
     posted_at: string | null;
+    next_attempt_at: string | null;
+    /** Fineract's repayments, one per loan, split as Fineract applied them. */
+    core_transactions: CoreTransaction[];
+    /** Odoo's name for the journal entry. */
+    ledger_entry: string | null;
   } | null;
   trail: Omit<AuditRow, "subject">[];
+}
+
+export interface CoreTransaction {
+  loan_ref: string;
+  external_id: string;
+  transaction_id: number;
+  principal_kobo: number;
+  interest_kobo: number;
+  charges_kobo: number;
+  overpayment_kobo: number;
 }
 
 export interface Ingestion {

@@ -6,7 +6,9 @@
 #   Postgres   one instance, a database per system                      localhost:15432
 #   Collector  OpenTelemetry in, Jaeger out
 #   Jaeger     traces                                                   http://localhost:16686
-#   API        webhooks now, approvals later                            http://localhost:18000
+#   API        webhooks, sign-in, approvals, the web app's reads          http://localhost:18000
+#   Web        Repaydesk's screens                                      http://localhost:18082
+#   Gateway    posts approved repayments to Fineract and Odoo (.NET)
 #
 # Everything here is synthetic and for local use. Secrets come from .env (copy .env.example).
 
@@ -177,6 +179,10 @@ services:
       ODOO_DB: ledger
       ODOO_USERNAME: ${ODOO_USERNAME:-admin}
       ODOO_PASSWORD: ${ODOO_PASSWORD:-admin}
+      FINERACT_READ_USERNAME: ${FINERACT_READ_USERNAME:-repaydesk-read}
+      FINERACT_READ_PASSWORD: ${FINERACT_READ_PASSWORD:?set FINERACT_READ_PASSWORD in .env}
+      FINERACT_GATEWAY_USERNAME: ${FINERACT_GATEWAY_USERNAME:-repaydesk-gateway}
+      FINERACT_GATEWAY_PASSWORD: ${FINERACT_GATEWAY_PASSWORD:?set FINERACT_GATEWAY_PASSWORD in .env}
       BANK_NAME: ${BANK_NAME:-Demo Microfinance Bank}
       SEED_BORROWERS: ${SEED_BORROWERS:-2000}
       SEED_RANDOM: ${SEED_RANDOM:-42}
@@ -199,11 +205,13 @@ services:
       PAYRAIL_WEBHOOK_SECRET: ${PAYRAIL_WEBHOOK_SECRET:-dev-only-payrail-secret}
       STAFF_DEMO_PASSWORD: ${STAFF_DEMO_PASSWORD:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
+      # The gateway rechecks approvals with the same threshold.
+      TWO_PERSON_ABOVE_KOBO: ${TWO_PERSON_ABOVE_KOBO:-50000000}
       # Read only: a borrower's or loan's page asks core banking live.
       FINERACT_URL: http://fineract:8080/fineract-provider/api/v1
       FINERACT_TENANT: default
-      FINERACT_USERNAME: ${FINERACT_USERNAME:-mifos}
-      FINERACT_PASSWORD: ${FINERACT_PASSWORD:-password}
+      FINERACT_USERNAME: ${FINERACT_READ_USERNAME:-repaydesk-read}
+      FINERACT_PASSWORD: ${FINERACT_READ_PASSWORD:?set FINERACT_READ_PASSWORD in .env}
     ports:
       - "127.0.0.1:18000:8000"
     healthcheck:
@@ -228,8 +236,35 @@ services:
       REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
       FINERACT_URL: http://fineract:8080/fineract-provider/api/v1
       FINERACT_TENANT: default
-      FINERACT_USERNAME: ${FINERACT_USERNAME:-mifos}
-      FINERACT_PASSWORD: ${FINERACT_PASSWORD:-password}
+      FINERACT_USERNAME: ${FINERACT_READ_USERNAME:-repaydesk-read}
+      FINERACT_PASSWORD: ${FINERACT_READ_PASSWORD:?set FINERACT_READ_PASSWORD in .env}
+
+  # The posting gateway (.NET): the only writer to Fineract and the ledger (ADR 0002). It drains
+  # the posting outbox, rechecking each approval against the decisions before it posts.
+  gateway:
+    build: ./services/gateway
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy  # the API's start applies the database migrations
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: repaydesk-gateway
+      REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
+      FINERACT_URL: http://fineract:8080/fineract-provider/api/v1
+      FINERACT_TENANT: default
+      FINERACT_USERNAME: ${FINERACT_GATEWAY_USERNAME:-repaydesk-gateway}
+      FINERACT_PASSWORD: ${FINERACT_GATEWAY_PASSWORD:?set FINERACT_GATEWAY_PASSWORD in .env}
+      ODOO_URL: http://odoo:8069
+      ODOO_DB: ledger
+      ODOO_USERNAME: ${ODOO_USERNAME:-admin}
+      ODOO_PASSWORD: ${ODOO_PASSWORD:-admin}
+      TWO_PERSON_ABOVE_KOBO: ${TWO_PERSON_ABOVE_KOBO:-50000000}
+    healthcheck:
+      test: ["CMD", "dotnet", "Repaydesk.Gateway.dll", "--healthy"]
+      interval: 15s
+      start_period: 15s
+      retries: 5
 
   # One-shot: picks up new statement files from data/inbox. With --replay-webhooks it instead
   # delivers the recorded provider webhooks to the API, one request each.
@@ -265,8 +300,8 @@ services:
       REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
       FINERACT_URL: http://fineract:8080/fineract-provider/api/v1
       FINERACT_TENANT: default
-      FINERACT_USERNAME: ${FINERACT_USERNAME:-mifos}
-      FINERACT_PASSWORD: ${FINERACT_PASSWORD:-password}
+      FINERACT_USERNAME: ${FINERACT_READ_USERNAME:-repaydesk-read}
+      FINERACT_PASSWORD: ${FINERACT_READ_PASSWORD:?set FINERACT_READ_PASSWORD in .env}
       DATA_DIR: /data
     volumes:
       - ./data:/data

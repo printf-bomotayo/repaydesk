@@ -130,8 +130,17 @@ Built so far (milestone 1):
   doesn't answer, the page says so and shows the copy. The search box opens a loan, customer
   reference or phone directly. The Today screen of the
   [approved mockup](https://claude.ai/artifact/3zvA1ZuM8f1CHQmRi89QiV) arrives in chunk 9.
-- **CI**: lint and tests on every push. On main, the full stack comes up, gets seeded, and
-  the contract tests run against it.
+- **The posting gateway** (chunk 8, `services/gateway`, .NET 10): the only writer to Fineract and
+  the ledger. Woken by Postgres the moment a match is approved, it rechecks the approval against
+  the decisions themselves, posts the repayment to Fineract, then a journal entry to Odoo that
+  credits the loan exactly as Fineract split it, and marks the line posted, all under the
+  payment's idempotency key. A crash halfway resumes without posting twice; an outage is retried;
+  a refusal stops and waits for a person. Each service now has its own Fineract login: read only
+  for the API, directory and matching, repayments only for the gateway. See
+  [ADR 0007](docs/adr/0007-posting-gateway.md). `python scripts/dev.py gateway` runs its tests.
+- **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
+  comes up, gets seeded, the contract tests run against it, and an approved match is posted to
+  Fineract and the ledger by the gateway.
 
 Decisions are recorded in [`docs/adr/`](docs/adr/).
 

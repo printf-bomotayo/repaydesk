@@ -14,7 +14,14 @@ from datetime import date, timedelta
 
 import pytest
 
-from repaydesk.adapters.chart import INTEREST_INCOME, PRINCIPAL, REPAYMENT_JOURNAL, SUSPENSE, collection_account_code
+from repaydesk.adapters.chart import (
+    CHART,
+    INTEREST_INCOME,
+    PRINCIPAL,
+    REPAYMENT_JOURNAL,
+    SUSPENSE,
+    collection_account_code,
+)
 from repaydesk.adapters.memory import MemoryCoreBanking, MemoryLedger
 from repaydesk.adapters.ports import AlreadyPosted, JournalEntry, JournalLine
 from repaydesk.domain import Borrower, Channel, Installment, Loan, bank_today
@@ -54,7 +61,8 @@ def core(request):
 @pytest.fixture(params=ledger_impls)
 def ledger(request):
     lg = request.param()
-    lg.ensure_setup("Contract Test Bank", COLLECTION_ACCOUNTS)
+    # The demo's own name: these run against the demo's Odoo, and setup renames the company.
+    lg.ensure_setup(os.getenv("BANK_NAME", "Demo Microfinance Bank"), COLLECTION_ACCOUNTS)
     return lg
 
 
@@ -201,3 +209,17 @@ def test_unbalanced_entry_is_refused(ledger):
     with pytest.raises(ValueError):
         ledger.post_entry(bad)
     assert ledger.find_entry(bad.reference) is None
+
+
+@pytest.mark.integration
+def test_odoo_names_every_account_as_repaydesk_means_it():
+    """Odoo's generic chart already uses some of our codes (131000 is its "Tax Paid"). Setup must
+    make each one Repaydesk's account, not post repayments to an account named for something else."""
+    lg = _odoo()
+    lg.ensure_setup(os.getenv("BANK_NAME", "Demo Microfinance Bank"), COLLECTION_ACCOUNTS)
+    wanted = {code: (name, kind) for code, name, kind in CHART}
+    wanted |= {collection_account_code(k): (f"Collections: {name}", "asset_cash")
+               for k, (name, _n) in COLLECTION_ACCOUNTS.items()}
+    have = {a["code"]: (a["name"], a["account_type"]) for a in lg._x(
+        "account.account", "search_read", [["code", "in", list(wanted)]], fields=["code", "name", "account_type"])}
+    assert have == wanted

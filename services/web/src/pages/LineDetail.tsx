@@ -14,6 +14,10 @@ const ACTION: Record<string, string> = {
   "proposal.approved": "Approved",
   "proposal.rejected": "Rejected",
   "posting.queued": "Handed to the posting gateway",
+  "posting.posted": "Posted to Fineract and the ledger",
+  "posting.retry_scheduled": "Posting retried later",
+  "posting.failed": "Posting failed; needs a person",
+  "posting.refused": "Posting refused by the gateway",
 };
 
 export function LineDetail() {
@@ -149,39 +153,7 @@ function CaseFile({ line }: { line: Line }) {
             </div>
           </section>
 
-          {line.posting && (
-            <section className="panel">
-              <header>
-                <h2>Posting</h2>
-                <Pill status={line.posting.status === "posted" ? "posted" : "approved"} label={line.posting.status} />
-              </header>
-              <div className="body">
-                <dl className="kv">
-                  <dt>Idempotency key</dt>
-                  <dd className="mono">{line.posting.idempotency_key}</dd>
-                  <dt>Attempts</dt>
-                  <dd>{line.posting.attempts}</dd>
-                  {line.posting.posted_at && (
-                    <>
-                      <dt>Posted</dt>
-                      <dd>{stamp(line.posting.posted_at)}</dd>
-                    </>
-                  )}
-                  {line.posting.last_error && (
-                    <>
-                      <dt>Last error</dt>
-                      <dd className="mono">{line.posting.last_error}</dd>
-                    </>
-                  )}
-                </dl>
-                <p className="note">
-                  {line.posting.status === "posted"
-                    ? "The key is the repayment's external id in Fineract and the journal entry's reference in Odoo."
-                    : "Waiting for the posting gateway (chunk 8). It posts under this key, so a retry can never post twice."}
-                </p>
-              </div>
-            </section>
-          )}
+          {line.posting && <PostingPanel posting={line.posting} />}
 
           {history.length > 0 && (
             <section className="panel">
@@ -283,4 +255,95 @@ function arrival(line: Line): string {
   const a = line.arrived_by;
   if (!a) return "";
   return a.kind === "file" ? `in ${a.file_name}, ${stamp(a.received_at)}` : `by webhook, ${stamp(a.received_at)}`;
+}
+
+const POSTING_PILL = {
+  pending: ["approved", "waiting to post"],
+  posted: ["posted", "posted"],
+  failed: ["late", "failed"],
+} as const;
+
+/** What the gateway did: Fineract's repayment for each loan, split as Fineract applied it, and the ledger entry. */
+function PostingPanel({ posting }: { posting: NonNullable<Line["posting"]> }) {
+  const [pill, label] = POSTING_PILL[posting.status];
+  return (
+    <section className="panel">
+      <header>
+        <h2>Posting</h2>
+        <Pill status={pill} label={label} />
+      </header>
+      <div className="body">
+        <dl className="kv">
+          <dt>Idempotency key</dt>
+          <dd className="mono">{posting.idempotency_key}</dd>
+          {posting.posted_at && (
+            <>
+              <dt>Posted</dt>
+              <dd>{stamp(posting.posted_at)}</dd>
+            </>
+          )}
+          {posting.ledger_entry && (
+            <>
+              <dt>Ledger entry</dt>
+              <dd className="mono">{posting.ledger_entry}</dd>
+            </>
+          )}
+          <dt>Attempts</dt>
+          <dd>{posting.attempts}</dd>
+          {posting.last_error && (
+            <>
+              <dt>{posting.status === "failed" ? "Why it stopped" : "Last error"}</dt>
+              <dd className="mono">{posting.last_error}</dd>
+            </>
+          )}
+          {posting.status === "pending" && posting.next_attempt_at && (
+            <>
+              <dt>Next attempt</dt>
+              <dd>{stamp(posting.next_attempt_at)}</dd>
+            </>
+          )}
+        </dl>
+        {posting.core_transactions.length > 0 && (
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fineract repayment</th>
+                  <th className="num">Principal</th>
+                  <th className="num">Interest</th>
+                  <th className="num">Other</th>
+                </tr>
+              </thead>
+              <tbody>
+                {posting.core_transactions.map((t) => (
+                  <tr key={t.external_id}>
+                    <td>
+                      <LoanLink loanRef={t.loan_ref} /> <span className="mono note">{t.external_id}</span>
+                    </td>
+                    <td className="num">{naira(t.principal_kobo)}</td>
+                    <td className="num">{naira(t.interest_kobo)}</td>
+                    <td className="num">{otherPortions(t.charges_kobo, t.overpayment_kobo)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="note">
+          {posting.status === "posted"
+            ? "The key is the repayment's external id in Fineract and the journal entry's reference in the ledger. The entry credits each loan exactly as Fineract split the payment."
+            : posting.status === "failed"
+              ? "The gateway stopped and won't try this again on its own. Any Fineract repayment listed above was posted; nothing was written to the ledger."
+              : posting.core_transactions.length > 0
+                ? "Fineract has the repayment; the ledger didn't answer. The next attempt finds Fineract's repayment by this key and writes only the ledger entry."
+                : "The posting gateway picks this up within seconds. It looks each write up by this key before making it, so a retry never posts twice."}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function otherPortions(charges: number, overpaid: number): string {
+  const parts = [charges > 0 && `${naira(charges)} charges`, overpaid > 0 && `${naira(overpaid)} overpaid`].filter(Boolean);
+  return parts.length ? parts.join(", ") : "–";
 }

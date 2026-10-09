@@ -97,7 +97,8 @@ def line(conn: psycopg.Connection, line_id: str) -> dict | None:
         "JOIN staff s ON s.id = d.staff_id WHERE d.proposal_id = ANY(%s) ORDER BY d.at", (ids,),
     ).fetchall() if ids else []
     posting = conn.execute(
-        "SELECT o.id, o.idempotency_key, o.status, o.attempts, o.last_error, o.posted_at FROM posting_outbox o "
+        "SELECT o.id, o.idempotency_key, o.status, o.attempts, o.last_error, o.posted_at, o.next_attempt_at, "
+        "o.core_transactions, o.ledger_entry FROM posting_outbox o "
         "WHERE o.line_id = %s ORDER BY o.id DESC LIMIT 1", (lid,),
     ).fetchone()
     copies = [r[0] for r in conn.execute(
@@ -128,7 +129,9 @@ def line(conn: psycopg.Connection, line_id: str) -> dict | None:
                           for d in decisions if d[0] == p[0]],
         } for p in proposals],
         "posting": {"outbox_id": posting[0], "idempotency_key": posting[1], "status": posting[2],
-                    "attempts": posting[3], "last_error": posting[4], "posted_at": _iso(posting[5])}
+                    "attempts": posting[3], "last_error": posting[4], "posted_at": _iso(posting[5]),
+                    "next_attempt_at": _iso(posting[6]), "core_transactions": posting[7] or [],
+                    "ledger_entry": posting[8]}
         if posting else None,
         "trail": [{"id": t[0], "at": _iso(t[1]), "actor": t[2], "actor_name": t[6], "action": t[3], "detail": t[4],
                    "trace_id": t[5]} for t in trail],

@@ -1,5 +1,6 @@
 """Developer tasks that work the same on Windows, macOS and Linux. `make <task>` calls these.
 
+    python scripts/dev.py env       create .env, or add keys .env.example has gained (random secrets)
     python scripts/dev.py up        start the stack and seed it (first run: 10 to 15 minutes)
     python scripts/dev.py up-langfuse   also start self-hosted Langfuse (about 2 GB more)
     python scripts/dev.py seed      seed again (skips what exists)
@@ -9,6 +10,7 @@
     python scripts/dev.py match     propose matches for new lines by rule (certain cases only)
     python scripts/dev.py score     score the live proposals against the truth file
     python scripts/dev.py directory copy the book from Fineract into the borrower directory now
+    python scripts/dev.py gateway   the posting gateway's tests (.NET; database tests use the compose Postgres)
     python scripts/dev.py test      unit, contract and database tests (database tests skip without the stack)
     python scripts/dev.py itest     contract tests against the running Fineract and Odoo
     python scripts/dev.py lint      ruff, and the web app's type check
@@ -26,6 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "services" / "core"
 WEB = ROOT / "services" / "web"
+GATEWAY = ROOT / "services" / "gateway"
 URLS = """
   Fineract API   http://127.0.0.1:18080/fineract-provider/api/v1   (tenant: default, user from .env)
   Fineract UI    http://127.0.0.1:18081                             (Mifos X web app, same login)
@@ -56,6 +59,18 @@ def python() -> str:
     return sys.executable
 
 
+def new_secret() -> str:
+    """URL-safe, so it can sit in a database URL, and strong enough for Fineract's password rule:
+    upper and lower case, a digit, a symbol, no character twice in a row."""
+    import re
+    import secrets
+
+    while True:
+        s = secrets.token_urlsafe(18)
+        if re.fullmatch(r"(?!.*(.)\1)(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*-).{12,50}", s):
+            return s
+
+
 def ensure_env() -> None:
     """Create .env from .env.example, or add keys the example has gained since. Random secrets."""
     import base64
@@ -73,7 +88,7 @@ def ensure_env() -> None:
         key, value = line.split("=", 1)
         if key in present:
             continue
-        value = re.sub(r"change-me-[a-z]+", lambda _: secrets.token_urlsafe(18), value)
+        value = re.sub(r"change-me-[a-z]+", lambda _: new_secret(), value)
         if key == "LANGFUSE_ENCRYPTION_KEY":
             value = secrets.token_hex(32)
         values[key] = value
@@ -114,7 +129,9 @@ def ensure_data_dir() -> None:
 
 
 def main(task: str) -> None:
-    if task == "up":
+    if task == "env":
+        ensure_env()
+    elif task == "up":
         ensure_env()
         ensure_data_dir()
         run("docker", "compose", "up", "-d", "--wait")
@@ -146,6 +163,8 @@ def main(task: str) -> None:
     elif task == "test":
         # Database tests use the compose Postgres when it is up; without it they skip.
         run(python(), "-m", "pytest", "-q", cwd=CORE, env={"REPAYDESK_TEST_DATABASE_URL": test_database_url()})
+    elif task == "gateway":
+        run("dotnet", "test", str(GATEWAY), env={"REPAYDESK_TEST_DATABASE_URL": test_database_url()})
     elif task == "itest":
         run(python(), "-m", "pytest", "-q", "-m", "integration", cwd=CORE, env={
             "FINERACT_URL": "http://127.0.0.1:18080/fineract-provider/api/v1",

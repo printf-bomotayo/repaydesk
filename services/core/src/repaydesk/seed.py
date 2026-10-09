@@ -7,7 +7,9 @@ Safe to re-run. The first run records its seed, size and as-of date; later runs 
 so the book comes out identical and every load step skips what already exists.
 
 This is a setup tool with write access to Fineract and Odoo. In the running system only the
-posting gateway writes to them (milestone 2).
+posting gateway writes to them (ADR 0002). The seed creates the restricted Fineract logins the
+running system uses: read only for the API, the directory and rule matching, and repayments only
+for the gateway.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from psycopg.types.json import Jsonb
 
 from repaydesk import db, directory, telemetry
 from repaydesk.adapters.chart import OPENING_BALANCE, PRINCIPAL, REPAYMENT_JOURNAL
-from repaydesk.adapters.fineract import FineractCoreBanking
+from repaydesk.adapters.fineract import POSTING, READ_ONLY, FineractCoreBanking
 from repaydesk.adapters.odoo import OdooLedger
 from repaydesk.adapters.ports import AlreadyPosted, JournalEntry, JournalLine
 from repaydesk.domain import Book, Loan, bank_today, naira
@@ -130,6 +132,17 @@ def load(book: Book, core: FineractCoreBanking, ledger: OdooLedger) -> dict[str,
     return counts
 
 
+def service_users(core: FineractCoreBanking) -> None:
+    for role, prefix, permissions in (("Repaydesk read only", "FINERACT_READ", READ_ONLY),
+                                      ("Repaydesk posting gateway", "FINERACT_GATEWAY", POSTING)):
+        username, password = os.getenv(f"{prefix}_USERNAME"), os.getenv(f"{prefix}_PASSWORD")
+        if not (username and password):
+            log(f"{prefix}_USERNAME and {prefix}_PASSWORD not set: no {role.lower()} login in Fineract")
+            continue
+        core.ensure_service_user(username, password, role, permissions)
+        log(f"Fineract login {username}: {', '.join(permissions)}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--borrowers", type=int, default=int(os.getenv("SEED_BORROWERS", "2000")))
@@ -188,6 +201,7 @@ def _run(args, root) -> int:
         wait_for("Fineract", core.health)
         wait_for("Odoo", ledger.health)
         counts = load(book, core, ledger)
+        service_users(core)
 
         with conn.transaction(), conn.cursor() as cur:
             cur.executemany(

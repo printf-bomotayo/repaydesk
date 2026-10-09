@@ -1,14 +1,17 @@
 """The ledger accounts Repaydesk posts to. Same codes in every Ledger adapter.
 
-A repayment is: debit the collection account it arrived in; credit loan principal and
-interest income. A line nobody can place yet is: debit the collection account; credit
-repayment suspense. Clearing suspense later moves it from suspense to the loan.
+A repayment is: debit the collection account it arrived in; credit loan principal, interest
+income, charges income and customer overpayments, split exactly as core banking applied it
+(the posting gateway's chart, services/gateway, uses the same codes). A line nobody can place
+yet is: debit the collection account; credit repayment suspense. Clearing suspense later moves
+it from suspense to the loan.
 """
 
 # (code, name, Odoo account type)
 CHART = [
     ("131000", "Loans to customers: principal", "asset_current"),
     ("410000", "Interest income on loans", "income"),
+    ("420000", "Fee and penalty income on loans", "income"),
     ("219000", "Repayment suspense", "liability_current"),
     ("219500", "Customer overpayments", "liability_current"),
     ("300100", "Loan book opening balance", "equity"),
@@ -16,6 +19,7 @@ CHART = [
 
 PRINCIPAL = "131000"
 INTEREST_INCOME = "410000"
+CHARGES_INCOME = "420000"
 SUSPENSE = "219000"
 OVERPAYMENTS = "219500"
 OPENING_BALANCE = "300100"
