@@ -1,4 +1,5 @@
-"""Repaydesk's HTTP API: the payment provider's webhook, staff sign-in, and the review queue.
+"""Repaydesk's HTTP API: the payment provider's webhook, staff sign-in, the review queue, and
+the reads behind the web app (payments, ingestion, the audit log).
 
 The webhook does the least it can at the door: check the signature, store the line (or note it
 as a duplicate), answer. Matching happens later, off the request, so a slow match can never
@@ -25,7 +26,7 @@ from opentelemetry import trace
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
 
-from repaydesk import approvals, db, staff, telemetry
+from repaydesk import approvals, db, staff, telemetry, views
 from repaydesk.adapters.webhooks import PayRailWebhooks
 from repaydesk.ingest import store_line
 
@@ -49,6 +50,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Repaydesk", lifespan=lifespan)
+
+
+class StripApiPrefix:
+    """The web app calls /api/... on its own origin, and nginx or Vite pass the path through
+    untouched. Stripping the prefix here, rather than in the proxy, keeps line ids with '#' or
+    ':' in them byte for byte: a proxy that rewrites a path decodes and re-encodes it first."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and (scope["path"] == "/api" or scope["path"].startswith("/api/")):
+            scope = dict(scope, path=scope["path"][4:] or "/", raw_path=scope.get("raw_path", b"")[4:] or b"/")
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(StripApiPrefix)
 
 try:  # traces every request when OpenTelemetry is configured
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -194,3 +212,57 @@ def reject(proposal_id: int, body: Rejection, who: Me):
         except approvals.Refused as e:
             return _refused(e)
     return {"proposal_id": out.proposal_id, "status": out.status}
+
+
+# ---- reads for the web app -------------------------------------------------------------------
+
+
+@app.get("/config")
+def config() -> dict:
+    """What the web app needs before sign-in: whose bank this is, and where the other systems'
+    screens live, so a record can be opened in them. No secrets."""
+    return {
+        "bank_name": os.getenv("BANK_NAME", "Demo Microfinance Bank"),
+        "links": {
+            "fineract_web": os.getenv("FINERACT_WEB_PUBLIC_URL", "http://127.0.0.1:18081"),
+            "odoo": os.getenv("ODOO_PUBLIC_URL", "http://127.0.0.1:18069"),
+            "jaeger": os.getenv("JAEGER_PUBLIC_URL", "http://127.0.0.1:16686"),
+        },
+    }
+
+
+@app.get("/summary")
+def summary(who: Me) -> dict:
+    with app.state.pool.connection() as conn:
+        return views.summary(conn)
+
+
+@app.get("/lines")
+def list_lines(who: Me, status: str | None = None, channel: str | None = None, q: str | None = None,
+               limit: int = 50, offset: int = 0) -> dict:
+    if status and status not in views.STATUSES:
+        raise HTTPException(422, f"status is one of {', '.join(views.STATUSES)}")
+    with app.state.pool.connection() as conn:
+        return views.lines(conn, status, channel, q, min(max(limit, 1), 200), max(offset, 0))
+
+
+@app.get("/lines/{line_id:path}")
+def get_line(line_id: str, who: Me) -> dict:
+    with app.state.pool.connection() as conn:
+        found = views.line(conn, line_id)
+    if not found:
+        raise HTTPException(404, "No such payment line.")
+    return found
+
+
+@app.get("/ingestion")
+def ingestion(who: Me) -> dict:
+    with app.state.pool.connection() as conn:
+        return views.ingestion(conn)
+
+
+@app.get("/audit")
+def audit_log(who: Me, actor: str | None = None, action: str | None = None, subject: str | None = None,
+              before: int | None = None, limit: int = 100) -> dict:
+    with app.state.pool.connection() as conn:
+        return views.audit(conn, actor, action, subject, before, min(max(limit, 1), 500))

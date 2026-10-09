@@ -35,6 +35,24 @@ jobs:
       - run: ruff check src tests
       - run: pytest -q
 
+  web:
+    name: web app (type check, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: services/web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx vite build
+
   compose:
     name: compose file is valid
     runs-on: ubuntu-latest
@@ -49,7 +67,7 @@ jobs:
     # About ten minutes, so it runs on main and on demand, not on every pull request.
     name: stack, seed and contract tests
     if: github.event_name != 'pull_request'
-    needs: [core, compose]
+    needs: [core, web, compose]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -72,6 +90,13 @@ jobs:
         run: |
           docker compose run --rm --build match
           docker compose run --rm match python -m repaydesk.scoring
+      - name: the web app serves, and reaches the API through its own origin
+        run: |
+          curl -fsS http://127.0.0.1:18082/ | grep -q '<div id="root">'
+          curl -fsS http://127.0.0.1:18082/payments/anything | grep -q '<div id="root">'
+          password=$(grep '^STAFF_DEMO_PASSWORD=' .env | cut -d= -f2-)
+          token=$(curl -fsS -X POST http://127.0.0.1:18082/api/auth/sign-in -H 'Content-Type: application/json'             -d "{\"staff_id\":\"hadiza\",\"password\":\"$password\"}" | python -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          curl -fsS http://127.0.0.1:18082/api/lines?limit=1 -H "Authorization: Bearer $token" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["total"] > 0, d; print(d["total"], "lines")'
       - run: pip install -e "services/core[dev]"
       - name: contract tests against Fineract and Odoo
         working-directory: services/core

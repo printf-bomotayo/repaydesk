@@ -389,6 +389,7 @@ values from `.env.example`; change them in `.env`.
 | Fineract, API reference | Swagger UI, built in | http://127.0.0.1:18080/fineract-provider/swagger-ui/index.html | as above, on each call | Any endpoint the adapter uses |
 | Odoo | The full Odoo web app, built in | http://127.0.0.1:18069 | `admin` / `admin` | **Invoicing → Accounting → Journal Entries** (the opening entry); **Chart of Accounts** |
 | Jaeger | Trace search, built in | http://127.0.0.1:16686 | none | Service `repaydesk-ingest`, operation `ingest.replay_webhooks`: one trace across ingest and the API |
+| Repaydesk | Its own web app (chunk 5) | http://127.0.0.1:18082 | `amaka`, `kunle`, `tunde` or `hadiza`; `STAFF_DEMO_PASSWORD` in `.env` | **Payments** → any line's case file; **Ingestion**; **Audit log** |
 | Repaydesk API | FastAPI's docs, built in | http://127.0.0.1:18000/docs | staff sign-in from chunk 4: `POST /auth/sign-in`, then **Authorize** with the token | `GET /queue`; `POST /webhooks/payrail` |
 | Langfuse (optional) | Model-call traces | http://127.0.0.1:3000 | `admin@repaydesk.local`, password in `.env` | Generations, from milestone 3 |
 
@@ -595,5 +596,143 @@ demo logins; a bank would use its single sign-on (plan, stage 4).
   > with a unique violation instead of being recorded as duplicates.
 
 **Plan.** Milestone 2, rules, approvals and gateway: the approval queue with role limits.
+
+---
+
+## Chunk 5 — the web app: sign-in, Payments, Ingestion, Audit ✅
+
+_Date: 2026-10-09_
+
+**What & why.** _Metaphor: a case-file room._ In a records office, each matter has a folder.
+Open it and everything is there in order: the original letter, the notes on it, who signed what
+and when, and where it went next. Nobody has to ask three departments to piece the story
+together. Until now, Repaydesk's story for a payment was spread across four tables and the audit
+log, readable only with SQL.
+
+This chunk opens the room. `services/web` is a React and TypeScript app, built to the
+[approved mockup](https://claude.ai/artifact/3zvA1ZuM8f1CHQmRi89QiV) and with its styles:
+
+- **Sign-in** as one of the demo reviewers. The signed-in person's role and limit show in the top
+  bar. When the API ends a session (expired, or the account deactivated), the app returns to
+  sign-in and says why.
+- **Payments.** Every line, newest first, 50 a page. Filters for status (with counts) and channel,
+  and a search across the payer, narration, line id and the loan a line was matched to. Filters
+  live in the address, so a filtered view can be bookmarked or sent.
+- **A payment's case file.** What arrived and how (the file it was in, or the webhook), and any
+  later copies. The live proposal, with its loans and the rule's evidence turned into sentences
+  marked ✓ or ✕. Who approved, the posting key waiting in the outbox, earlier rejected proposals
+  with their reasons, and the trail from the audit log, each step linked to its trace in Jaeger.
+- **Ingestion.** Lines per source, every statement file with its lines reconciled (stored plus
+  duplicates equals the file's lines), and the latest webhook deliveries with signature and outcome.
+- **Audit log.** Newest first, filtered by action, person or subject, with each row's detail and
+  trace. It pages by id, so rows arriving meanwhile don't shift the page.
+- **Screens still to come** — Today, Review queue, Borrowers, Loans, Agent runs, Collections and
+  Measures — are in the navigation, labelled with the chunk or milestone that brings them.
+
+The API gains the reads behind these (`views.py`): `GET /lines`, `/lines/{id}`, `/ingestion`,
+`/audit`, `/summary`, and `/config` (the bank's name and the other systems' addresses, no secrets).
+
+In compose, the app is the `web` service on port 18082: a Node build stage, then nginx serving the
+files and passing `/api` to the API.
+
+**Decisions worth recording.**
+
+*One origin, no CORS.* The app calls `/api/...` on its own address. nginx in the container and
+Vite in development pass it to the API, so there are no cross-origin requests and nothing to
+allow. The content security policy can then say `connect-src 'self'`.
+
+*The API strips `/api`, not the proxy.* Line ids contain `#` and `:` (`virtual_account:evt_…#2`).
+When nginx rewrites a path, it decodes and re-encodes it first, which can mangle those. So
+`proxy_pass` carries no path and the request goes through byte for byte; a small ASGI middleware
+in the API drops the prefix. A test fetches a `#` id through `/api` with the browser's encoding.
+
+*"All" means money, not deliveries.* The first look at the running app showed 648 lines, 297 of
+them duplicates. They are correct records: the webhook week was replayed three times while chunk
+2 was verified, and every redelivery was kept. But a provider retrying a webhook ten times is not
+ten payments. The default list and the navigation count now leave copies out. They have their own
+filter, and every original lists its copies.
+
+*Staff by name.* The audit log stores a login (`amaka`); the screens show "Amaka Nwosu", joined
+from the staff table. Rules and agents read as "Rule: virtual account".
+
+*Times in the bank's zone.* Moments show in Lagos time, the same as `bank_today()`. Value dates
+are calendar days and never shift with the viewer's zone. A test pins 23:30 UTC on 8 October to
+00:30 on the 9th.
+
+*Pinned to the majors I know.* The newest releases on npm are React Router 8, TypeScript 7,
+Vite 8 and Vitest 5. The app pins React Router 7, TypeScript 5.9, Vite 7 and Vitest 3, all current
+within their majors, rather than guess at changed APIs. Upgrading is a chunk of its own once the
+UI is complete.
+
+*No install scripts.* npm 11 holds back package install scripts until approved. esbuild's is only
+a check, and the build works without it, so nothing was approved.
+
+**Principles.** _Same case-file metaphor._ *The whole story in one folder* — a reviewer should
+never need SQL to learn what happened to a payment. *The record speaks in sentences* — evidence
+recorded as keys is shown as the checks a person would make. *Copies are filed, not counted* —
+duplicates stay visible, but never in a total of money. *Don't trust the courier with the address*
+— a proxy that rewrites paths can change ids, so it carries them untouched.
+
+**Files.** New: `services/web/` (the app, its tests, `Dockerfile`, `nginx.conf`),
+`services/core/src/repaydesk/views.py`, `services/core/tests/test_views.py`. Changed: `api.py` (read
+endpoints, `/config`, the `/api` prefix), `compose.yaml` (the `web` service), `scripts/dev.py` and
+`Makefile` (`web`, `webtest`; `lint` type-checks the app), `.github/workflows/ci.yml` (a `web` job;
+the stack job signs in through the app's origin), `README.md`.
+
+**Depends on / blocks.** Depends on chunk 4 (sign-in, decisions, outbox). Blocks chunk 6 (the review
+queue screen) and chunk 7 (borrowers and loans).
+
+**Verification.**
+
+- **Python:** `ruff` clean. `pytest`: 88 passed, 7 deselected. The 7 new tests run against a real
+  ingested week with rules run and one approval. They cover:
+  - every read refusing a request without a token;
+  - paging that returns every line exactly once, and filters and counts that agree;
+  - search by the matched loan;
+  - a line's full story, from proposal to posting key;
+  - a copy reached through `/api` by its encoded `#` id;
+  - every file reconciling;
+  - the audit log paging by id and filtering by action, actor and pattern.
+- **Web:** `tsc` clean; `vitest`: 11 passed. They cover:
+  - naira formatting, exact for large amounts;
+  - dates in the bank's zone;
+  - evidence sentences, including keys the app doesn't know;
+  - against a stubbed API: a wrong password refused, sign-in landing on Payments with the token
+    on every request, a `#` id requested encoded, and an ended session returning to sign-in.
+- **The image:** builds, and is served healthy with `X-Frame-Options` and a content security
+  policy. A deep link (`/payments/x`) gets the app.
+
+In the browser, against the running stack, signed in as Amaka:
+
+- Payments listed 351 lines, the same as the truth file, with 214 awaiting review.
+- The case file for `RD-P110` showed the webhook arrival and its two copies, the rule's two checks,
+  Amaka's approval, the pending posting and a four-step trail.
+- The line Tunde rejected showed the rejected proposal with his reason, and "waits for the agent".
+- Ingestion reconciled: 49 + 58 + 77 + 26 file lines plus 141 webhook lines is 351.
+- The audit log filtered to the one rejection.
+- No console errors.
+
+What it does not prove: the layout at phone width. The responsive rules are the mockup's,
+unchanged, but the browser window couldn't be resized during this session, and screenshots
+failed on and off, so the pages were checked mostly by their text. Nor does it prove behaviour
+under real load: paging is in place, but the biggest list tried has 648 rows.
+
+**PR package.**
+
+- Subject: `Chunk 5: web app with sign-in, Payments, Ingestion and Audit`
+- Description:
+  > Adds Repaydesk's web app (React, TypeScript, Vite), built to the approved mockup and served by
+  > nginx on port 18082, which passes /api to the API on the same origin. Staff sign in, then
+  > browse every payment line, filtered, searched and paged, and open any line's case file: what
+  > arrived, the proposal and its evidence in plain words, who decided, the posting key, and the
+  > audit trail with trace links. Ingestion shows every file and webhook delivery reconciled; the
+  > audit log pages by id with filters.
+  >
+  > Adds the read endpoints behind it. Default lists leave out duplicate deliveries, which keep
+  > their own filter. The API strips the /api prefix itself so ids with '#' pass through the proxy
+  > intact. CI gains a web job (type check, tests, build) and a stack step that signs in through
+  > the app's origin.
+
+**Plan.** Milestone 2, rules, approvals and gateway: the staff UI, first screens.
 
 ---

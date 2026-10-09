@@ -94,6 +94,15 @@ services:
       interval: 10s
       retries: 10
 
+  # Repaydesk's own screens: the React app, served by nginx, which also passes /api to the API.
+  web:
+    build: ./services/web
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18082:80"
+
   # Creates the ledger database with the accounting app, once. Odoo itself starts after.
   odoo-init:
     image: odoo:18.0

@@ -39,15 +39,17 @@ collection journals in Odoo, and writes a week of incoming payments to `data/inb
 
 | What | Where |
 |---|---|
+| **Repaydesk** | http://127.0.0.1:18082 (sign in as `amaka` or `kunle`, officers; `tunde`, supervisor; `hadiza`, auditor; password `STAFF_DEMO_PASSWORD` in `.env`) |
 | Fineract API | http://127.0.0.1:18080/fineract-provider/api/v1 (tenant `default`); Swagger at `/fineract-provider/swagger-ui/index.html` |
 | Fineract staff screens | http://127.0.0.1:18081 (Mifos X web app; login `mifos` / `password`, tenant `default`) |
 | Odoo ledger | http://127.0.0.1:18069 (database `ledger`, login `admin` / `admin`; Invoicing → Accounting → Journal Entries) |
 | Jaeger traces | http://127.0.0.1:16686 |
-| Repaydesk API | http://127.0.0.1:18000/docs (sign in as `amaka` or `kunle`, officers; `tunde`, supervisor; `hadiza`, auditor; password `STAFF_DEMO_PASSWORD` in `.env`) |
+| Repaydesk API | http://127.0.0.1:18000/docs (same logins; `POST /auth/sign-in`, then **Authorize** with the token) |
 | Postgres | 127.0.0.1:15432 |
 | The week's payment files | `data/inbox/` |
 
-Other tasks: `seed`, `ingest`, `match`, `score`, `down`, `reset`, `test`, `itest`, `lint`, `urls`
+Other tasks: `seed`, `ingest`, `match`, `score`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
+and for the web app `web` (live reload on http://127.0.0.1:5173, needs Node 24) and `webtest`
 (`python scripts/dev.py <task>`).
 
 On Windows, use `127.0.0.1` rather than `localhost`; `localhost` tries IPv6 first and adds
@@ -112,6 +114,12 @@ Built so far (milestone 1):
   auditors read only. A rejection needs a reason and hands the line to the agent; rules never
   propose it again. An approved match goes to the posting outbox in the same transaction, with the
   idempotency key the gateway will post under. See [ADR 0005](docs/adr/0005-approval-rules.md).
+- **The web app** (chunk 5, `services/web`): React and TypeScript, served by nginx on port 18082,
+  which passes `/api` to the API on the same origin. Sign-in, then **Payments** (every line,
+  filtered and paged, each with its case file: as received, the proposal and its checks in plain
+  words, who decided, the posting key and the audit trail with trace links), **Ingestion** (files
+  and webhook deliveries, each reconciled) and the **Audit log**. The other screens of the
+  [approved mockup](https://claude.ai/artifact/3zvA1ZuM8f1CHQmRi89QiV) arrive in chunks 6, 7 and 9.
 - **CI**: lint and tests on every push. On main, the full stack comes up, gets seeded, and
   the contract tests run against it.
 

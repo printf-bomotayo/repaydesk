@@ -10,7 +10,9 @@
     python scripts/dev.py score     score the live proposals against the truth file
     python scripts/dev.py test      unit, contract and database tests (database tests skip without the stack)
     python scripts/dev.py itest     contract tests against the running Fineract and Odoo
-    python scripts/dev.py lint      ruff
+    python scripts/dev.py lint      ruff, and the web app's type check
+    python scripts/dev.py web       the web app with live reload (http://127.0.0.1:5173)
+    python scripts/dev.py webtest   the web app's tests
     python scripts/dev.py urls      where everything is
 """
 
@@ -22,11 +24,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "services" / "core"
+WEB = ROOT / "services" / "web"
 URLS = """
   Fineract API   http://127.0.0.1:18080/fineract-provider/api/v1   (tenant: default, user from .env)
   Fineract UI    http://127.0.0.1:18081                             (Mifos X web app, same login)
   Odoo ledger    http://127.0.0.1:18069                             (database: ledger, user from .env)
   Jaeger         http://127.0.0.1:16686
+  Repaydesk      http://127.0.0.1:18082                             (sign in as amaka, kunle, tunde or hadiza; STAFF_DEMO_PASSWORD in .env)
   API            http://127.0.0.1:18000/docs
   Postgres       127.0.0.1:15432
   Week's files   data/inbox/   (truth for evals: data/truth/)
@@ -38,6 +42,10 @@ def run(*cmd: str, cwd: Path = ROOT, env: dict | None = None) -> None:
     code = subprocess.call(cmd, cwd=cwd, env={**os.environ, **(env or {})})
     if code:
         sys.exit(code)
+
+
+def npm() -> str:
+    return shutil.which("npm") or "npm"  # npm.cmd on Windows
 
 
 def python() -> str:
@@ -141,6 +149,14 @@ def main(task: str) -> None:
         })
     elif task == "lint":
         run(python(), "-m", "ruff", "check", "src", "tests", cwd=CORE)
+        run(npm(), "run", "typecheck", cwd=WEB)
+    elif task == "web":
+        # The web app with live reload on http://127.0.0.1:5173, against the API on 18000.
+        if not (WEB / "node_modules").exists():
+            run(npm(), "ci", "--no-audit", "--no-fund", cwd=WEB)
+        run(npm(), "run", "dev", "--", "--host", "127.0.0.1", cwd=WEB)
+    elif task == "webtest":
+        run(npm(), "test", cwd=WEB)
     elif task == "urls":
         print(URLS)
     else:
