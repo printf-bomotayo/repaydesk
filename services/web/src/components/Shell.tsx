@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, type Summary } from "../api";
 import { naira } from "../format";
 import { useSession } from "../session";
+import { useOnChange } from "./common";
 
 interface Area {
   to: string;
@@ -17,7 +18,7 @@ export const AREAS: { label: string; areas: Area[] }[] = [
     label: "Work",
     areas: [
       { to: "/today", label: "Today", later: "chunk 9" },
-      { to: "/review", label: "Review queue", later: "chunk 6", count: (s) => s.pending_proposals },
+      { to: "/review", label: "Review queue", count: (s) => s.pending_proposals },
       { to: "/payments", label: "Payments", count: (s) => Object.values(s.lines).reduce((a, b) => a + b, 0) - s.lines.duplicate },
     ],
   },
@@ -54,10 +55,12 @@ export function Shell() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [search, setSearch] = useState("");
 
-  // Navigation counts, refreshed on each move between screens. Cheap: two counts.
-  useEffect(() => {
+  // Navigation counts, refreshed on each move between screens and after any decision. Cheap: two counts.
+  const refresh = useCallback(() => {
     api.summary().then(setSummary, () => {});
-  }, [location.pathname]);
+  }, []);
+  useEffect(refresh, [location.pathname, refresh]);
+  useOnChange(refresh);
 
   function onSearch(e: FormEvent) {
     e.preventDefault();

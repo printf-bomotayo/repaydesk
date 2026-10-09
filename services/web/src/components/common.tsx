@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { STATUS_LABEL } from "../format";
 
@@ -93,4 +93,39 @@ export function ExternalLink({ href, children }: { href: string; children: React
       {children} ↗
     </a>
   );
+}
+
+// ---- toasts: one short message at a time, read out to screen readers ----------------------------
+
+const ToastContext = createContext<(message: string) => void>(() => {});
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [message, setMessage] = useState<string | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const show = useCallback((m: string) => {
+    setMessage(m);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setMessage(null), 5000);
+  }, []);
+  return (
+    <ToastContext.Provider value={show}>
+      {children}
+      <div aria-live="polite" role="status">
+        {message && <div className="toast">{message}</div>}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+export const useToast = () => useContext(ToastContext);
+
+// ---- "something changed": lets the navigation counts refresh after a decision -------------------
+
+const CHANGED = "repaydesk:changed";
+export const announceChange = () => window.dispatchEvent(new Event(CHANGED));
+export function useOnChange(fn: () => void) {
+  useEffect(() => {
+    window.addEventListener(CHANGED, fn);
+    return () => window.removeEventListener(CHANGED, fn);
+  }, [fn]);
 }

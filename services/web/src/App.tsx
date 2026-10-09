@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { Shell } from "./components/Shell";
-import { Loading } from "./components/common";
+import { Loading, ToastProvider } from "./components/common";
+import { Review } from "./pages/Review";
 import { Audit } from "./pages/Audit";
 import { Ingestion } from "./pages/Ingestion";
 import { Later } from "./pages/Later";
@@ -9,7 +10,7 @@ import { Payments } from "./pages/Payments";
 import { SignIn } from "./pages/SignIn";
 import { SessionProvider, useSession } from "./session";
 
-const LATER = ["/today", "/review", "/borrowers", "/loans", "/runs", "/collections", "/measures"];
+const LATER = ["/today", "/borrowers", "/loans", "/runs", "/collections", "/measures"];
 
 function Routed() {
   const { staff, checking } = useSession();
@@ -21,6 +22,7 @@ function Routed() {
         <Route index element={<Navigate to="/payments" replace />} />
         <Route path="/payments" element={<Payments />} />
         <Route path="/payments/:id" element={<LineDetail />} />
+        <Route path="/review" element={<Review />} />
         <Route path="/ingestion" element={<Ingestion />} />
         <Route path="/audit" element={<Audit />} />
         {LATER.map((p) => (
@@ -35,9 +37,11 @@ function Routed() {
 export function App() {
   return (
     <SessionProvider>
-      <BrowserRouter>
-        <Routed />
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <Routed />
+        </BrowserRouter>
+      </ToastProvider>
     </SessionProvider>
   );
 }

@@ -277,6 +277,15 @@ def test_a_morning_in_the_queue(client):
 
     q = c.get("/queue", headers=amaka).json()
     assert [i["proposal_id"] for i in q["items"]] == [reversal, group, small]  # largest first
+    assert q["counts"] == {"all": 3, "two_person": 2, "exclusions": 1} and q["total"] == 3
+
+    def ids(**params):
+        return [i["proposal_id"] for i in c.get("/queue", headers=amaka, params=params).json()["items"]]
+
+    assert ids(view="two_person") == [reversal, group]
+    assert ids(view="exclusions") == [reversal]
+    assert ids(limit=1, offset=1) == [group]
+    assert c.get("/queue", headers=amaka, params={"view": "mine"}).status_code == 422
     by_id = {i["proposal_id"]: i for i in q["items"]}
     assert by_id[group]["approvals_needed"] == 2 and by_id[group]["you"] == {
         "can_approve": True, "settles": False, "refused": None, "message": None}

@@ -187,10 +187,17 @@ SELECT p.id, p.kind, p.proposed_by, p.confidence, p.allocations, p.evidence, p.c
                  FROM decisions d JOIN staff s ON s.id = d.staff_id
                  WHERE d.proposal_id = p.id AND d.decision = 'approve'), '[]')
 FROM proposals p JOIN payment_lines l ON l.id = p.line_id
-WHERE p.status = 'pending'
+WHERE p.status = 'pending' {where}
 ORDER BY l.amount_kobo DESC, p.id
-LIMIT %(limit)s
+LIMIT %(limit)s OFFSET %(offset)s
 """
+
+# The queue's views: everything, the payments that need two people, and proposed exclusions.
+VIEWS = {
+    "all": "",
+    "two_person": "AND l.amount_kobo > %(threshold)s",
+    "exclusions": "AND p.kind = 'exclude'",
+}
 
 
 def _item(row, staff: Staff) -> dict:
@@ -209,9 +216,21 @@ def _item(row, staff: Staff) -> dict:
     }
 
 
-def queue(conn: psycopg.Connection, staff: Staff, limit: int = 200) -> list[dict]:
-    rows = conn.execute(_QUEUE, {"limit": limit}).fetchall()
-    return [_item(r, staff) for r in rows]
+def queue(conn: psycopg.Connection, staff: Staff, view: str = "all", limit: int = 50, offset: int = 0) -> dict:
+    """Pending proposals, largest payment first, a page at a time, with each view's count."""
+    args = {"limit": limit, "offset": offset, "threshold": TWO_PERSON_ABOVE_KOBO}
+    rows = conn.execute(_QUEUE.format(where=VIEWS[view]), args).fetchall()
+    counts = conn.execute(
+        "SELECT count(*), count(*) FILTER (WHERE l.amount_kobo > %(threshold)s), "
+        "count(*) FILTER (WHERE p.kind = 'exclude') "
+        "FROM proposals p JOIN payment_lines l ON l.id = p.line_id WHERE p.status = 'pending'", args,
+    ).fetchone()
+    return {
+        "items": [_item(r, staff) for r in rows],
+        "counts": dict(zip(("all", "two_person", "exclusions"), counts, strict=True)),
+        "total": counts[list(VIEWS).index(view)],
+        "limit": limit, "offset": offset,
+    }
 
 
 def proposal(conn: psycopg.Connection, proposal_id: int, staff: Staff) -> dict:

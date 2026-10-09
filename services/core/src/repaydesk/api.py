@@ -175,10 +175,11 @@ def me(who: Me) -> dict:
 
 
 @app.get("/queue")
-def review_queue(who: Me, limit: int = 200) -> dict:
+def review_queue(who: Me, view: str = "all", limit: int = 50, offset: int = 0) -> dict:
+    if view not in approvals.VIEWS:
+        raise HTTPException(422, f"view is one of {', '.join(approvals.VIEWS)}")
     with app.state.pool.connection() as conn:
-        items = approvals.queue(conn, who, min(max(limit, 1), 500))
-    return {"items": items, "count": len(items)}
+        return approvals.queue(conn, who, view, min(max(limit, 1), 200), max(offset, 0))
 
 
 @app.get("/proposals/{proposal_id}")

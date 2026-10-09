@@ -1,7 +1,7 @@
 import { Link, useParams } from "react-router";
 import { api, type LineDetail as Line } from "../api";
 import { ExternalLink, Failed, Loading, Pill, useLoad } from "../components/common";
-import { evidenceChecks } from "../evidence";
+import { Checks } from "../components/Checks";
 import { actorLabel, CHANNEL_LABEL, day, naira, stamp } from "../format";
 import { useSession } from "../session";
 import { lineHref } from "./Payments";
@@ -45,7 +45,14 @@ function CaseFile({ line }: { line: Line }) {
           </h1>
           <p className="sub mono">{line.narration}</p>
         </div>
-        <Pill status={line.status} />
+        <div className="actions">
+          <Pill status={line.status} />
+          {line.status === "proposed" && (
+            <Link className="btn primary" to="/review" style={{ textDecoration: "none" }}>
+              Decide in the review queue
+            </Link>
+          )}
+        </div>
       </div>
 
       {line.duplicate_of && (
@@ -234,7 +241,6 @@ function CaseFile({ line }: { line: Line }) {
 }
 
 function ProposalBody({ p }: { p: Line["proposals"][number] }) {
-  const checks = evidenceChecks(p.evidence);
   const approvals = p.decisions.filter((d) => d.decision === "approve");
   return (
     <>
@@ -259,14 +265,7 @@ function ProposalBody({ p }: { p: Line["proposals"][number] }) {
         </table>
       )}
       <div style={{ marginTop: 8 }}>
-        {checks.map((c, i) => (
-          <div key={i} className={`check ${c.ok === true ? "yes" : c.ok === false ? "no" : "na"}`}>
-            <span className="m" aria-hidden="true">
-              {c.ok === true ? "✓" : c.ok === false ? "✕" : "–"}
-            </span>
-            <span>{c.text}</span>
-          </div>
-        ))}
+        <Checks evidence={p.evidence} />
       </div>
       {approvals.length > 0 && (
         <p className="note">

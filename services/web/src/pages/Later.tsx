@@ -3,7 +3,6 @@ import { AREAS } from "../components/Shell";
 
 const WHAT: Record<string, string> = {
   "/today": "The week at a glance: lines by status and channel, suspense by age, the latest agent runs.",
-  "/review": "Proposals waiting for a person, largest first, with approve and reject. The API is ready (chunk 4).",
   "/borrowers": "Every borrower, with their loans and every payment received from any channel.",
   "/loans": "Each loan's schedule, arrears, and repayments, posted and pending.",
   "/runs": "Each investigation by the agent: the tools it called, what they returned, and what it proposed.",

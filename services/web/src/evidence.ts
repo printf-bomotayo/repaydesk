@@ -30,7 +30,8 @@ const KNOWN: Record<string, (v: unknown, e: Evidence) => Check | null> = {
         : { ok: null, text: "Branch not known for this channel" },
   phone_matches: (v) => ({ ok: true, text: `The phone typed at the terminal is ${v}'s, who has one active loan` }),
   meaning: (v) => ({ ok: true, text: `Not a repayment: ${v}` }),
-  narration_pattern: (v) => ({ ok: true, text: `The narration matches the pattern ${v}` }),
+  // The pattern itself is for engineers (it stays in the stored evidence); a reviewer needs the meaning.
+  narration_pattern: () => ({ ok: true, text: "Recognised from the narration" }),
 };
 
 export function evidenceChecks(evidence: Evidence | null | undefined): Check[] {

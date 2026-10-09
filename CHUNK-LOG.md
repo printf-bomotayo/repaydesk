@@ -736,3 +736,113 @@ under real load: paging is in place, but the biggest list tried has 648 rows.
 **Plan.** Milestone 2, rules, approvals and gateway: the staff UI, first screens.
 
 ---
+
+## Chunk 6 — the review queue screen ✅
+
+_Date: 2026-10-09_
+
+**What & why.** _Metaphor: a signing desk with the mandate pinned above it._ Chunk 4 wrote the
+mandate: who may sign for how much, and when two signatures are needed. A mandate that lives only
+in the cashier's head gets discovered one bounced cheque at a time. Pin it above the desk and each
+signer knows before picking up the pen whether this one is theirs to sign, and if not, whose.
+
+This chunk is that desk: the **Review queue** screen, the mockup's two-column layout on the
+chunk 4 API.
+
+- **Each proposal is a card.** The payment on the left: channel, date, amount, narration, payer,
+  any typed reference, and a link to the full line. The proposal on the right: who proposed it and
+  how sure, the loans and amounts (or "Exclude: not a repayment"), and the checks in plain words.
+- **Largest first, 25 a page, three views with counts:** all, needs two people, and not a
+  repayment. The view lives in the address.
+- **The buttons say what you may do.** "Approve", "Approve (first of two)" or "Give second
+  approval". When you may not, the button is disabled and the reason sits beside it: above your
+  limit and the first approver's, or you approved this already. Those reasons come from the API's
+  `judge`, the same function that enforces the rule, so the screen and the rule can't disagree.
+  An auditor sees every card marked read only, with no buttons.
+- **Rejecting takes a reason:** one of four common ones, or "Something else" with free text. The
+  reason goes to whoever looks next.
+- **After a decision**, a short message says what happened ("Approved ₦968,000. It's queued for
+  posting…"). The queue and the navigation counts refresh. If someone else decided first, the
+  reviewer is told and the card goes.
+- A payment awaiting review links to the queue from its case file.
+
+The API's `GET /queue` now pages (`limit`, `offset`), takes a `view`, and returns each view's
+count.
+
+**Decisions worth recording.**
+
+*Disable the button, and say why.* A greyed button with no reason trains people to ask a
+colleague or to retry. The refusal text is the API's own, so it's always the real reason.
+
+*The first approver can't reject.* The API already refused it. Found in the browser: Kunle's card
+still offered Reject after his first approval, so a click would only have produced an error. The
+button is now disabled with the reason.
+
+*Show the meaning, not the regular expression.* Found in the browser: an exclusion's evidence
+read "The narration matches the pattern \bHQ OPERATIONS FLOAT\b". A reviewer needs "Not a
+repayment: an internal float top-up", which was already the line above it. The pattern stays in
+the stored evidence for engineers, and the screen says "Recognised from the narration".
+
+*Views on the server, not in the browser.* Filtering a page of 25 in the browser would hide
+matches on other pages. The API filters and counts across the whole queue.
+
+*"Edit split" from the mockup is left out.* Changing a proposal's allocation is a new kind of
+decision, with its own audit and limits. It belongs with the agent's group splits in milestone 3,
+when proposals that need editing first appear.
+
+**Principles.** _Same signing-desk metaphor._ *Pin the mandate where the pen is* — each person
+sees, before acting, whether a decision is theirs. *One rule, two readers* — the screen asks the
+same function the API enforces. *A refusal is a sentence, not a grey box.* *Look at the real
+thing* — two of this chunk's fixes were invisible in the tests and obvious in the browser.
+
+**Files.** New: `services/web/src/pages/Review.tsx`, `Review.test.tsx`, `components/Checks.tsx`.
+Changed: `approvals.py` (queue views, paging and counts), `api.py` (`/queue` parameters),
+`tests/test_approvals.py`, `web/src/api.ts`, `components/common.tsx` (toasts, change events),
+`components/Shell.tsx` (counts refresh after a decision), `App.tsx`, `pages/LineDetail.tsx` (link to
+the queue), `pages/Later.tsx`, `evidence.ts`, `evidence.test.ts`, `README.md`.
+
+**Depends on / blocks.** Depends on chunks 4 and 5. Blocks chunk 9's end-to-end demo, which runs a
+payment through this screen.
+
+**Verification.** `ruff` clean; `pytest`: 88 passed, 7 deselected. The queue test now also covers
+each view's count, the views' contents, paging, and an unknown view refused. `tsc` clean; `vitest`:
+19 passed. The 7 new tests on the queue screen, against a stubbed API that applies decisions:
+
+- largest first, with loans and checks;
+- an officer refused above every limit and told why;
+- a first approval then waiting, with Approve and Reject both disabled for that reviewer;
+- a small approval leaving the queue;
+- a rejection with a written reason;
+- someone else deciding first;
+- an auditor with no buttons.
+
+In the browser, against the running stack:
+
+- Kunle (officer) opened "Needs two people" (22) and gave the first approval on a ₦968,000
+  virtual-account payment. The card showed "1 of 2 approvals: Kunle Adebayo" and his buttons
+  disabled with the reason.
+- Signed in as Tunde (supervisor), the same card offered "Give second approval". Approving took it
+  off the queue: all 214 → 213, two-person 22 → 21, and the navigation count with them.
+- The reject form opened with its reasons and was cancelled.
+- No console errors.
+
+What it does not prove: the layout at phone width, as in chunk 5. Nor the queue at volume: it pages
+on the server, but the largest queue tried has 214 proposals.
+
+**PR package.**
+
+- Subject: `Chunk 6: review queue screen`
+- Description:
+  > Adds the review queue: pending proposals largest first, each card showing the payment beside
+  > the proposal and its checks. Approve, approve as first of two, or give the second approval.
+  > Reject with a reason from a short list or written in. The buttons say what the signed-in
+  > person may do, and why not, from the same rule the API enforces. Auditors see it read only.
+  > After a decision the queue and navigation counts refresh; a proposal someone else decided
+  > first is reported and removed.
+  >
+  > The queue API now pages, filters by view (all, needs two people, not a repayment) and returns
+  > counts. An exclusion's evidence reads as its meaning rather than its regular expression.
+
+**Plan.** Milestone 2, rules, approvals and gateway: the approval queue, on screen.
+
+---

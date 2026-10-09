@@ -15,6 +15,13 @@ test("a reference match reads as the checks the rule made", () => {
   ]);
 });
 
+test("an exclusion reads as its meaning, not its pattern", () => {
+  expect(evidenceChecks({ meaning: "an internal float top-up", narration_pattern: "\bHQ OPERATIONS FLOAT\b" })).toEqual([
+    { ok: true, text: "Not a repayment: an internal float top-up" },
+    { ok: true, text: "Recognised from the narration" },
+  ]);
+});
+
 test("evidence nobody taught it to read is still shown", () => {
   expect(evidenceChecks({ odd_signal: 3 })).toEqual([{ ok: null, text: "odd signal: 3" }]);
   expect(evidenceChecks(null)).toEqual([]);

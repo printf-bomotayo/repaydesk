@@ -118,8 +118,11 @@ Built so far (milestone 1):
   which passes `/api` to the API on the same origin. Sign-in, then **Payments** (every line,
   filtered and paged, each with its case file: as received, the proposal and its checks in plain
   words, who decided, the posting key and the audit trail with trace links), **Ingestion** (files
-  and webhook deliveries, each reconciled) and the **Audit log**. The other screens of the
-  [approved mockup](https://claude.ai/artifact/3zvA1ZuM8f1CHQmRi89QiV) arrive in chunks 6, 7 and 9.
+  and webhook deliveries, each reconciled) and the **Audit log**.
+- **The review queue** (chunk 6): proposals largest first, the payment beside the proposal and
+  its checks. Approve or reject with a reason; the buttons say what the signed-in person may do
+  and why not, using the same rule the API enforces. The other screens of the
+  [approved mockup](https://claude.ai/artifact/3zvA1ZuM8f1CHQmRi89QiV) arrive in chunks 7 and 9.
 - **CI**: lint and tests on every push. On main, the full stack comes up, gets seeded, and
   the contract tests run against it.
 

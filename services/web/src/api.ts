@@ -139,6 +139,39 @@ export interface Ingestion {
   };
 }
 
+export type QueueView = "all" | "two_person" | "exclusions";
+
+export interface QueueItem {
+  proposal_id: number;
+  kind: "match" | "exclude";
+  proposed_by: string;
+  confidence: number;
+  allocations: Allocation[];
+  evidence: Record<string, unknown>;
+  proposed_at: string;
+  line: {
+    id: string;
+    channel: Channel;
+    value_date: string;
+    amount_kobo: number;
+    narration: string;
+    payer_name: string | null;
+    customer_reference: string | null;
+  };
+  approvals: { staff_id: string; name: string; at: string }[];
+  approvals_needed: 1 | 2;
+  /** What the signed-in person may do, decided by the same rule the API enforces. */
+  you: { can_approve: boolean; settles: boolean; refused: string | null; message: string | null };
+}
+
+export interface QueuePage {
+  items: QueueItem[];
+  counts: Record<QueueView, number>;
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface AuditPage {
   items: AuditRow[];
   next_before: number | null;
@@ -230,6 +263,14 @@ export const api = {
     request<LinePage>("GET", "/lines", { query }),
   line: (id: string) => request<LineDetail>("GET", `/lines/${encodeURIComponent(id)}`),
   ingestion: () => request<Ingestion>("GET", "/ingestion"),
+  queue: (query: { view?: QueueView; limit?: number; offset?: number }) => request<QueuePage>("GET", "/queue", { query }),
+  approve: (proposalId: number) =>
+    request<{ proposal_id: number; status: "first_approval" | "approved"; outbox_id: number | null }>(
+      "POST",
+      `/proposals/${proposalId}/approve`,
+    ),
+  reject: (proposalId: number, reason: string) =>
+    request<{ proposal_id: number; status: "rejected" }>("POST", `/proposals/${proposalId}/reject`, { body: { reason } }),
   audit: (query: { actor?: string; action?: string; subject?: string; before?: number | null; limit?: number }) =>
     request<AuditPage>("GET", "/audit", { query }),
 };
