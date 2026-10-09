@@ -26,7 +26,7 @@ from pathlib import Path
 from opentelemetry import trace
 from psycopg.types.json import Jsonb
 
-from repaydesk import db, telemetry
+from repaydesk import db, directory, telemetry
 from repaydesk.adapters.chart import OPENING_BALANCE, PRINCIPAL, REPAYMENT_JOURNAL
 from repaydesk.adapters.fineract import FineractCoreBanking
 from repaydesk.adapters.odoo import OdooLedger
@@ -196,6 +196,12 @@ def _run(args, root) -> int:
                 [(loan.virtual_account, loan.ref, loan.borrower_ref) for loan in book.loans],
             )
         counts["virtual_accounts"] = len(book.loans)
+
+        # The directory service syncs every 15 minutes; a fresh demo shouldn't wait for it.
+        with tracer.start_as_current_span("directory.sync"):
+            synced = directory.sync(conn, core)
+        if synced:
+            log(f"borrower directory: {synced['borrowers']} borrowers, {synced['loans']} loans")
 
     with tracer.start_as_current_span("write.files"):
         files = write_week(book, args.data_dir, os.getenv("PAYRAIL_WEBHOOK_SECRET", "dev-only-payrail-secret"))

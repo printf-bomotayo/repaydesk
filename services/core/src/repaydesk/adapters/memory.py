@@ -5,19 +5,21 @@ A real adapter is correct when it passes the same contract tests these pass.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from datetime import date
 
 from repaydesk.adapters.ports import (
     AlreadyPosted,
     BorrowerMatch,
+    DirectoryBorrower,
     DueInstallment,
     JournalEntry,
+    LoanSummary,
     LoanView,
     OutboundMessage,
     PostedRepayment,
 )
-from repaydesk.domain import Borrower, Branch, Group, Loan, Product, bank_today
+from repaydesk.domain import Borrower, Branch, Channel, Group, Loan, Product, bank_today
 
 
 def normalise(text: str) -> str:
@@ -46,6 +48,8 @@ class MemoryCoreBanking:
         self.loans: dict[str, Loan] = {}
         self.repayments: dict[str, list[PostedRepayment]] = {}
         self._keys: set[str] = set()
+        self.branches: list[Branch] = []
+        self.products: list[Product] = []
 
     # writer
     def ensure_setup(self, branches: Iterable[Branch], products: Iterable[Product]) -> None:
@@ -64,7 +68,8 @@ class MemoryCoreBanking:
         self.loans.setdefault(loan.ref, loan)
         self.repayments.setdefault(loan.ref, [])
 
-    def post_repayment(self, loan_ref: str, on: date, amount: int, idempotency_key: str) -> None:
+    def post_repayment(self, loan_ref: str, on: date, amount: int, idempotency_key: str,
+                       channel: Channel | None = None) -> None:
         if idempotency_key in self._keys:
             raise AlreadyPosted(idempotency_key)
         if loan_ref not in self.loans:
@@ -72,7 +77,8 @@ class MemoryCoreBanking:
         if amount <= 0:
             raise ValueError("amount must be positive")
         self._keys.add(idempotency_key)
-        self.repayments[loan_ref].append(PostedRepayment(loan_ref, on, amount, idempotency_key))
+        self.repayments[loan_ref].append(
+            PostedRepayment(loan_ref, on, amount, idempotency_key, channel.value if channel else None))
 
     # reader
     def _match(self, b: Borrower) -> BorrowerMatch:
@@ -118,6 +124,22 @@ class MemoryCoreBanking:
 
     def list_repayments(self, loan_ref: str) -> list[PostedRepayment]:
         return sorted(self.repayments.get(loan_ref, []), key=lambda r: r.on)
+
+    # directory
+    def list_borrowers(self) -> Iterator[DirectoryBorrower]:
+        branch_names = {b.code: b.name for b in self.branches}
+        member_of = {ref: g for g in self.groups.values() for ref in g.member_refs}
+        for b in self.borrowers.values():
+            g = member_of.get(b.ref)
+            yield DirectoryBorrower(b.ref, b.ref, b.full_name, b.phone, b.branch_code, branch_names.get(b.branch_code),
+                                    b.business_name, g.ref if g else None, g.name if g else None, b.joined_on, True)
+
+    def list_loans(self) -> Iterator[LoanSummary]:
+        product_names = {p.code: p.name for p in self.products}
+        for ref, loan in self.loans.items():
+            v = self.get_loan(ref)
+            yield LoanSummary(ref, ref, loan.borrower_ref, loan.product, product_names.get(loan.product, loan.product),
+                              loan.principal, loan.disbursed_on, v.status, v.outstanding, v.arrears, v.days_late)
 
 
 class MemoryLedger:

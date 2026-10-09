@@ -1,5 +1,5 @@
 """Repaydesk's HTTP API: the payment provider's webhook, staff sign-in, the review queue, and
-the reads behind the web app (payments, ingestion, the audit log).
+the reads behind the web app (payments, borrowers and loans, ingestion, the audit log).
 
 The webhook does the least it can at the door: check the signature, store the line (or note it
 as a duplicate), answer. Matching happens later, off the request, so a slow match can never
@@ -26,7 +26,7 @@ from opentelemetry import trace
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
 
-from repaydesk import approvals, db, staff, telemetry, views
+from repaydesk import approvals, db, records, staff, telemetry, views
 from repaydesk.adapters.webhooks import PayRailWebhooks
 from repaydesk.ingest import store_line
 
@@ -44,6 +44,15 @@ async def lifespan(app: FastAPI):
     app.state.session_secret = os.getenv("SESSION_SECRET") or secrets.token_urlsafe(32)
     app.state.pool = ConnectionPool(url, min_size=1, max_size=8, kwargs={"autocommit": True}, open=True)
     app.state.payrail = PayRailWebhooks(os.getenv("PAYRAIL_WEBHOOK_SECRET", "dev-only-payrail-secret"))
+    # Read-only use: a borrower's or loan's page asks core banking live. Without it, those pages
+    # show the directory's copy and say so.
+    app.state.core = None
+    if fineract := os.getenv("FINERACT_URL"):
+        from repaydesk.adapters.fineract import FineractCoreBanking
+
+        app.state.core = FineractCoreBanking(fineract, os.getenv("FINERACT_TENANT", "default"),
+                                             os.getenv("FINERACT_USERNAME", "mifos"),
+                                             os.getenv("FINERACT_PASSWORD", "password"), timeout=10)
     yield
     app.state.pool.close()
     telemetry.shutdown()
@@ -254,6 +263,46 @@ def get_line(line_id: str, who: Me) -> dict:
     if not found:
         raise HTTPException(404, "No such payment line.")
     return found
+
+
+@app.get("/borrowers")
+def list_borrowers(who: Me, view: str = "all", q: str | None = None, limit: int = 50, offset: int = 0) -> dict:
+    if view not in records.BORROWER_VIEWS:
+        raise HTTPException(422, f"view is one of {', '.join(records.BORROWER_VIEWS)}")
+    with app.state.pool.connection() as conn:
+        return records.borrowers(conn, view, q, min(max(limit, 1), 200), max(offset, 0))
+
+
+@app.get("/borrowers/{ref}")
+def get_borrower(ref: str, who: Me) -> dict:
+    with app.state.pool.connection() as conn:
+        found = records.borrower(conn, ref, app.state.core)
+    if not found:
+        raise HTTPException(404, "No such borrower in the directory.")
+    return found
+
+
+@app.get("/loans")
+def list_loans(who: Me, band: str = "all", q: str | None = None, limit: int = 50, offset: int = 0) -> dict:
+    if band not in records.LOAN_BANDS:
+        raise HTTPException(422, f"band is one of {', '.join(records.LOAN_BANDS)}")
+    with app.state.pool.connection() as conn:
+        return records.loans(conn, band, q, min(max(limit, 1), 200), max(offset, 0))
+
+
+@app.get("/loans/{ref}")
+def get_loan(ref: str, who: Me) -> dict:
+    with app.state.pool.connection() as conn:
+        found = records.loan(conn, ref, app.state.core)
+    if not found:
+        raise HTTPException(404, "No such loan in the directory.")
+    return found
+
+
+@app.get("/find")
+def find(who: Me, q: str) -> dict:
+    with app.state.pool.connection() as conn:
+        return records.find(conn, q)
 
 
 @app.get("/ingestion")

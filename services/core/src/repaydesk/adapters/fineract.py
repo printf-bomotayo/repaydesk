@@ -5,13 +5,18 @@ Fineract quirks this adapter absorbs, so nothing above it has to know:
 - external ids are unique per resource, which is what makes repayments idempotent;
 - name search is a case-sensitive substring match, so we search word by word in title case;
 - there is no field for a trading name, so it lives in a `client_business` datatable that
-  only supports exact lookups. Fuzzy search belongs in the borrower directory (milestone 3).
+  only supports exact lookups. Fuzzy search belongs in the borrower directory;
+- that datatable can list which clients have a row, but not the rows themselves, so reading
+  every trading name is one call per borrower. The directory listing caches them (see
+  `_trading_names`).
 """
 
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterable
+import time
+from collections.abc import Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Any
 
@@ -21,17 +26,21 @@ from opentelemetry import trace
 from repaydesk.adapters.ports import (
     AlreadyPosted,
     BorrowerMatch,
+    DirectoryBorrower,
     DueInstallment,
+    LoanSummary,
     LoanView,
     PostedRepayment,
 )
-from repaydesk.domain import Borrower, Branch, Channel, Group, Loan, Product, to_kobo
+from repaydesk.domain import Borrower, Branch, Channel, Group, Loan, Product, bank_today, to_kobo
 
 tracer = trace.get_tracer("repaydesk.adapters.fineract")
 
 DATES = {"dateFormat": "yyyy-MM-dd", "locale": "en"}
 SHORT_NAMES = {"QUICK": "QUIK", "SME": "SME"}  # Fineract allows four characters
 BUSINESS_TABLE = "client_business"
+PAGE = 500
+TRADING_NAMES_REREAD_SECONDS = 24 * 3600
 
 
 def _naira(kobo: int) -> str:
@@ -68,6 +77,8 @@ class FineractCoreBanking:
         self._product_codes: dict[int, str] = {}
         self._payment_types: dict[str, int] = {}
         self._clients: dict[str, int] = {}
+        self._trading: dict[int, str | None] = {}
+        self._trading_read_at = 0.0
 
     # ---- plumbing ------------------------------------------------------------------------------
 
@@ -338,10 +349,95 @@ class FineractCoreBanking:
         if not j:
             return []
         return [
-            PostedRepayment(loan_ref, _date(t["date"]), to_kobo(t["amount"]), t.get("externalId", ""))
+            PostedRepayment(loan_ref, _date(t["date"]), to_kobo(t["amount"]), t.get("externalId", ""),
+                            ((t.get("paymentDetailData") or {}).get("paymentType") or {}).get("name"))
             for t in j.get("transactions", [])
             if t["type"].get("repayment") and not t.get("manuallyReversed")
         ]
+
+
+    # ---- the whole book, for the borrower directory --------------------------------------------
+
+    def _pages(self, path: str) -> Iterator[dict]:
+        offset = 0
+        while True:
+            page = self._call("GET", path, params={"limit": PAGE, "offset": offset})
+            yield from page["pageItems"]
+            offset += PAGE
+            if offset >= page["totalFilteredRecords"]:
+                return
+
+    def _trading_names(self) -> dict[int, str]:
+        """Every client's trading name. Fineract lists which clients have one in one call, then
+        each name is a call of its own, so names are kept between syncs: a sync reads only the
+        clients it hasn't seen, and everything again once a day in case a name was edited."""
+        ids: set[int] = set()
+        page, total = 0, None
+        while total is None or len(ids) < total:
+            res = self._call("POST", f"/datatables/{BUSINESS_TABLE}/query", {
+                "page": page, "size": 5000, "request": {"baseQuery": {"resultColumns": ["client_id"]}},
+            })
+            total = res["total"]
+            if not res["content"]:
+                break
+            ids.update(r["client_id"] for r in res["content"])
+            page += 1
+        if time.monotonic() - self._trading_read_at > TRADING_NAMES_REREAD_SECONDS:
+            self._trading, self._trading_read_at = {}, time.monotonic()
+        missing = sorted(ids - self._trading.keys())
+
+        def one(client_id: int) -> str | None:
+            rows = self._get_or_none(f"/datatables/{BUSINESS_TABLE}/{client_id}")
+            return rows[0].get("trading_name") if rows else None
+
+        with ThreadPoolExecutor(8) as pool:
+            self._trading.update(zip(missing, pool.map(one, missing), strict=True))
+        for gone in self._trading.keys() - ids:
+            del self._trading[gone]
+        return {k: v for k, v in self._trading.items() if v}
+
+    def list_borrowers(self) -> Iterator[DirectoryBorrower]:
+        with tracer.start_as_current_span("fineract.list_borrowers"):
+            self._load_maps()
+            office_code = {v: k for k, v in self._offices.items()}
+            groups: dict[int, tuple[str, str]] = {}
+            for g in self._call("GET", "/groups"):
+                detail = self._call("GET", f"/groups/{g['id']}", params={"associations": "clientMembers"})
+                for m in detail.get("clientMembers", []):
+                    groups[m["id"]] = (g.get("externalId") or str(g["id"]), g["name"])
+            trading = self._trading_names()
+            for c in self._pages("/clients"):
+                if not c.get("externalId"):
+                    continue  # not created by a bank process that gives customers a reference
+                group = groups.get(c["id"])
+                yield DirectoryBorrower(
+                    ref=c["externalId"], core_id=str(c["id"]), name=c.get("displayName", ""),
+                    phone=c.get("mobileNo"), branch_code=office_code.get(c.get("officeId")),
+                    branch_name=c.get("officeName"), business_name=trading.get(c["id"]),
+                    group_ref=group[0] if group else None, group_name=group[1] if group else None,
+                    joined_on=_date(c.get("activationDate")), active=bool(c.get("active")),
+                )
+
+    def list_loans(self) -> Iterator[LoanSummary]:
+        with tracer.start_as_current_span("fineract.list_loans"):
+            self._load_maps()
+            for j in self._pages("/loans"):
+                if not j.get("externalId"):
+                    continue
+                st, s = j["status"], j.get("summary") or {}
+                status = ("overpaid" if st.get("overpaid") else "closed" if st.get("closed")
+                          else "active" if st.get("active") else "other")
+                # The list leaves `delinquent.pastDueDays` at 0; only a single loan's read fills it.
+                # Its summary does carry the date it fell overdue, which gives the same number.
+                since = _date(s.get("overdueSinceDate"))
+                yield LoanSummary(
+                    ref=j["externalId"], core_id=str(j["id"]), borrower_ref=j.get("clientExternalId", ""),
+                    product=self._product_codes.get(j["loanProductId"], str(j["loanProductId"])),
+                    product_name=j.get("loanProductName", ""), principal=to_kobo(j["principal"]),
+                    disbursed_on=_date(j.get("timeline", {}).get("actualDisbursementDate")), status=status,
+                    outstanding=to_kobo(s.get("totalOutstanding", 0)), arrears=to_kobo(s.get("totalOverdue", 0)),
+                    days_late=(bank_today() - since).days if since else 0,
+                )
 
 
 def _products() -> list[Product]:

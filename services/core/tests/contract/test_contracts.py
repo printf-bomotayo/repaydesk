@@ -17,7 +17,7 @@ import pytest
 from repaydesk.adapters.chart import INTEREST_INCOME, PRINCIPAL, REPAYMENT_JOURNAL, SUSPENSE, collection_account_code
 from repaydesk.adapters.memory import MemoryCoreBanking, MemoryLedger
 from repaydesk.adapters.ports import AlreadyPosted, JournalEntry, JournalLine
-from repaydesk.domain import Borrower, Installment, Loan, bank_today
+from repaydesk.domain import Borrower, Channel, Installment, Loan, bank_today
 from repaydesk.synth.generator import add_months
 from repaydesk.synth.names import BRANCHES, COLLECTION_ACCOUNTS, PRODUCTS
 
@@ -140,6 +140,29 @@ def test_missed_instalments_show_as_arrears(core):
     due = [i for i in loan.schedule if i.due_on < TODAY]
     assert view.arrears == sum(i.total for i in due)
     assert view.days_late == (TODAY - due[0].due_on).days
+
+
+def test_the_whole_book_lists_for_the_directory(core):
+    tag = _unique()
+    b = _borrower(tag)
+    core.create_borrower(b)
+    disbursed = add_months(TODAY.replace(day=min(TODAY.day, 28)), -1) - timedelta(days=3)
+    loan = _loan(b, tag, disbursed)
+    core.create_loan(loan)
+    core.post_repayment(loan.ref, TODAY, 30_000_00, f"PAY-{tag}", channel=Channel.POS)
+
+    listed = next(x for x in core.list_borrowers() if x.ref == b.ref)
+    assert (listed.name, listed.phone, listed.branch_code, listed.business_name, listed.active) == (
+        b.full_name, b.phone, "IKJ", b.business_name, True)
+    assert listed.branch_name == "Ikeja" and listed.joined_on == b.joined_on and listed.core_id
+
+    summary = next(x for x in core.list_loans() if x.ref == loan.ref)
+    view = core.get_loan(loan.ref)
+    assert (summary.borrower_ref, summary.product, summary.principal, summary.disbursed_on, summary.status) == (
+        b.ref, "SME", loan.principal, disbursed, "active")
+    assert (summary.outstanding, summary.arrears, summary.days_late) == (view.outstanding, view.arrears, view.days_late)
+    assert summary.arrears > 0 and summary.product_name == "SME working capital, 6 months"
+    assert [r.channel for r in core.list_repayments(loan.ref)] == ["pos"]
 
 
 def test_unknown_loan(core):

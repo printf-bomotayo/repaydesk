@@ -60,3 +60,31 @@ export function actorLabel(actor: string): string {
   const pretty = name.replace(/_/g, " ");
   return { rule: `Rule: ${pretty}`, agent: `Agent: ${pretty}`, service: `Service: ${pretty}` }[kind] ?? actor;
 }
+
+const fullDayFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
+/** A date with its year: "5 Aug 2026". */
+export function fullDay(isoDate: string): string {
+  return fullDayFmt.format(new Date(`${isoDate}T00:00:00Z`));
+}
+
+/** Today's date at the bank, "2026-10-09", whatever the viewer's own time zone. */
+export function bankToday(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now);
+}
+
+/** "just now", "4 minutes ago", "2 hours ago". */
+export function ago(iso: string, now: Date = new Date()): string {
+  const minutes = Math.round((now.getTime() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+/** "0700 556 6957" from "07005566957"; anything else as it is. */
+export function phone(digits: string | null): string {
+  if (!digits) return "–";
+  return /^0\d{10}$/.test(digits) ? `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}` : digits;
+}

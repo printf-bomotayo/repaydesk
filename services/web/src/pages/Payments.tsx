@@ -1,6 +1,7 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api, CHANNELS, STATUSES } from "../api";
 import { Failed, Loading, Pager, Pill, useLoad } from "../components/common";
+import { LoanLink } from "../components/records";
 import { actorLabel, CHANNEL_LABEL, day, naira, STATUS_LABEL } from "../format";
 
 const PAGE = 50;
@@ -115,7 +116,12 @@ export function Payments() {
                           <span className="note">not a repayment · {actorLabel(l.proposed_by ?? "")}</span>
                         ) : l.loan_refs.length ? (
                           <>
-                            <span className="mono">{l.loan_refs.join(", ")}</span>
+                            {l.loan_refs.map((r, i) => (
+                              <span key={r}>
+                                {i > 0 && ", "}
+                                <LoanLink loanRef={r} />
+                              </span>
+                            ))}
                             <div className="note">{actorLabel(l.proposed_by ?? "")}</div>
                           </>
                         ) : (

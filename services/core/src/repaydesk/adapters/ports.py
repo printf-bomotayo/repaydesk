@@ -63,6 +63,41 @@ class PostedRepayment:
     on: date
     amount: int
     reference: str
+    channel: str | None = None  # how it was paid, where core banking recorded it
+
+
+@dataclass(frozen=True)
+class DirectoryBorrower:
+    """One borrower as the directory keeps them: enough to find and list, not the whole record."""
+
+    ref: str
+    core_id: str  # core banking's own id, for links into its staff screens
+    name: str
+    phone: str | None
+    branch_code: str | None
+    branch_name: str | None
+    business_name: str | None
+    group_ref: str | None
+    group_name: str | None
+    joined_on: date | None
+    active: bool
+
+
+@dataclass(frozen=True)
+class LoanSummary:
+    """One loan's balances as the directory keeps them. The schedule stays in core banking."""
+
+    ref: str
+    core_id: str
+    borrower_ref: str
+    product: str
+    product_name: str
+    principal: int
+    disbursed_on: date | None
+    status: str  # active | closed | overpaid | other (not yet disbursed, written off, ...)
+    outstanding: int
+    arrears: int
+    days_late: int
 
 
 class AlreadyPosted(Exception):
@@ -84,6 +119,15 @@ class CoreBankingReader(Protocol):
     def list_repayments(self, loan_ref: str) -> list[PostedRepayment]: ...
 
 
+class CoreBankingDirectory(Protocol):
+    """The whole book, for the borrower directory's copy. Called every few minutes: an
+    implementation should page through core banking's list endpoints, not fetch record by record."""
+
+    def list_borrowers(self) -> Iterator[DirectoryBorrower]: ...
+
+    def list_loans(self) -> Iterator[LoanSummary]: ...
+
+
 class CoreBankingWriter(Protocol):
     def ensure_setup(self, branches: Iterable[Branch], products: Iterable[Product]) -> None: ...
 
@@ -100,7 +144,7 @@ class CoreBankingWriter(Protocol):
         ...
 
 
-class CoreBanking(CoreBankingReader, CoreBankingWriter, Protocol):
+class CoreBanking(CoreBankingReader, CoreBankingDirectory, CoreBankingWriter, Protocol):
     pass
 
 

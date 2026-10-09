@@ -4,6 +4,7 @@ import { api, type Summary } from "../api";
 import { naira } from "../format";
 import { useSession } from "../session";
 import { useOnChange } from "./common";
+import { borrowerHref, loanHref } from "./records";
 
 interface Area {
   to: string;
@@ -25,8 +26,8 @@ export const AREAS: { label: string; areas: Area[] }[] = [
   {
     label: "Records",
     areas: [
-      { to: "/borrowers", label: "Borrowers", later: "chunk 7" },
-      { to: "/loans", label: "Loans", later: "chunk 7" },
+      { to: "/borrowers", label: "Borrowers" },
+      { to: "/loans", label: "Loans" },
       { to: "/runs", label: "Agent runs", later: "milestone 3" },
     ],
   },
@@ -62,10 +63,15 @@ export function Shell() {
   useEffect(refresh, [location.pathname, refresh]);
   useOnChange(refresh);
 
-  function onSearch(e: FormEvent) {
+  // A loan reference, customer reference or phone opens that record; anything else searches payments.
+  async function onSearch(e: FormEvent) {
     e.preventDefault();
     const q = search.trim();
-    if (q) navigate(`/payments?q=${encodeURIComponent(q)}`);
+    if (!q) return;
+    const found = await api.find(q).catch(() => ({ to: "payments" as const, q }));
+    if (found.to === "loan") navigate(loanHref(found.ref));
+    else if (found.to === "borrower") navigate(borrowerHref(found.ref));
+    else navigate(`/payments?q=${encodeURIComponent(q)}`);
   }
 
   return (
@@ -101,8 +107,8 @@ export function Shell() {
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search payments: name, narration, loan or line id"
-              aria-label="Search payments"
+              placeholder="Search: a loan, customer ref or phone opens it; anything else searches payments"
+              aria-label="Search"
             />
           </form>
           <span className="proto">Prototype</span>

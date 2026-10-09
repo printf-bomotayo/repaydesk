@@ -185,7 +185,7 @@ services:
     volumes:
       - ./data:/data
 
-  # The API: the payment provider's webhook today; approvals from chunk 4.
+  # The API: the payment provider's webhook, staff sign-in, approvals, and the web app's reads.
   api:
     build: ./services/core
     command: ["uvicorn", "repaydesk.api:app", "--host", "0.0.0.0", "--port", "8000"]
@@ -199,6 +199,11 @@ services:
       PAYRAIL_WEBHOOK_SECRET: ${PAYRAIL_WEBHOOK_SECRET:-dev-only-payrail-secret}
       STAFF_DEMO_PASSWORD: ${STAFF_DEMO_PASSWORD:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
+      # Read only: a borrower's or loan's page asks core banking live.
+      FINERACT_URL: http://fineract:8080/fineract-provider/api/v1
+      FINERACT_TENANT: default
+      FINERACT_USERNAME: ${FINERACT_USERNAME:-mifos}
+      FINERACT_PASSWORD: ${FINERACT_PASSWORD:-password}
     ports:
       - "127.0.0.1:18000:8000"
     healthcheck:
@@ -206,6 +211,25 @@ services:
       interval: 5s
       start_period: 10s
       retries: 20
+
+  # The borrower directory: copies the book from Fineract every 15 minutes, for search and lists.
+  directory:
+    build: ./services/core
+    command: ["python", "-m", "repaydesk.directory", "--every", "900"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      fineract:
+        condition: service_healthy
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: repaydesk-directory
+      REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
+      FINERACT_URL: http://fineract:8080/fineract-provider/api/v1
+      FINERACT_TENANT: default
+      FINERACT_USERNAME: ${FINERACT_USERNAME:-mifos}
+      FINERACT_PASSWORD: ${FINERACT_PASSWORD:-password}
 
   # One-shot: picks up new statement files from data/inbox. With --replay-webhooks it instead
   # delivers the recorded provider webhooks to the API, one request each.

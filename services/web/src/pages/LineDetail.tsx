@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router";
 import { api, type LineDetail as Line } from "../api";
 import { ExternalLink, Failed, Loading, Pill, useLoad } from "../components/common";
+import { LoanLink } from "../components/records";
 import { Checks } from "../components/Checks";
 import { actorLabel, CHANNEL_LABEL, day, naira, stamp } from "../format";
 import { useSession } from "../session";
@@ -257,7 +258,9 @@ function ProposalBody({ p }: { p: Line["proposals"][number] }) {
           <tbody>
             {p.allocations.map((a) => (
               <tr key={a.loan_ref}>
-                <td className="mono">{a.loan_ref}</td>
+                <td>
+                  <LoanLink loanRef={a.loan_ref} />
+                </td>
                 <td className="num">{naira(a.amount_kobo)}</td>
               </tr>
             ))}

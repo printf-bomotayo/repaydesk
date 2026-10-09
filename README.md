@@ -121,8 +121,15 @@ Built so far (milestone 1):
   and webhook deliveries, each reconciled) and the **Audit log**.
 - **The review queue** (chunk 6): proposals largest first, the payment beside the proposal and
   its checks. Approve or reject with a reason; the buttons say what the signed-in person may do
-  and why not, using the same rule the API enforces. The other screens of the
-  [approved mockup](https://claude.ai/artifact/3zvA1ZuM8f1CHQmRi89QiV) arrive in chunks 7 and 9.
+  and why not, using the same rule the API enforces.
+- **Borrowers and loans** (chunk 7): a borrower directory, Repaydesk's copy of the book taken from
+  Fineract every 15 minutes by the `directory` service, for search and lists: borrowers by name,
+  trading name, phone or loan, and loans by how late. A borrower's or loan's own page reads Fineract
+  live (balances, schedule, every repayment and its channel) and shows beside it the payments
+  Repaydesk holds but hasn't posted, so a borrower who paid is never shown as unpaid. If Fineract
+  doesn't answer, the page says so and shows the copy. The search box opens a loan, customer
+  reference or phone directly. The Today screen of the
+  [approved mockup](https://claude.ai/artifact/3zvA1ZuM8f1CHQmRi89QiV) arrives in chunk 9.
 - **CI**: lint and tests on every push. On main, the full stack comes up, gets seeded, and
   the contract tests run against it.
 

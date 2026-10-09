@@ -178,6 +178,135 @@ export interface AuditPage {
   actions: string[];
 }
 
+// ---- borrowers and loans ----------------------------------------------------------------------------
+
+/** The directory is a copy of core banking, refreshed every few minutes. */
+export interface DirectoryState {
+  synced_at: string | null;
+  borrowers: number;
+  loans: number;
+  /** Set when the latest attempt failed: the copy is from `synced_at`. */
+  failed_since: string | null;
+}
+
+export type BorrowerView = "all" | "arrears" | "held";
+
+export interface BorrowerRow {
+  ref: string;
+  name: string;
+  branch_name: string | null;
+  business_name: string | null;
+  phone: string | null;
+  loan_refs: string[];
+  arrears_kobo: number;
+  days_late: number;
+  /** Payments Repaydesk holds for this borrower's loans, not yet posted. */
+  held: { lines: number; amount_kobo: number };
+}
+
+export interface BorrowerPage {
+  items: BorrowerRow[];
+  counts: Record<BorrowerView, number>;
+  total: number;
+  limit: number;
+  offset: number;
+  directory: DirectoryState | null;
+}
+
+export type LoanStatus = "active" | "closed" | "overpaid" | "other";
+
+/** Money in for a loan: posted in core banking, or held by Repaydesk and not yet posted. */
+export interface MoneyIn {
+  on: string | null;
+  loan_ref: string;
+  amount_kobo: number;
+  channel: string | null;
+  reference: string;
+  status: "posted" | "proposed" | "approved";
+  line_id: string | null;
+}
+
+export interface BorrowerLoan {
+  ref: string;
+  core_id: string;
+  product_name: string;
+  principal_kobo: number;
+  disbursed_on: string | null;
+  status: LoanStatus;
+  outstanding_kobo: number;
+  arrears_kobo: number;
+  days_late: number;
+}
+
+export interface BorrowerRecord {
+  ref: string;
+  core_id: string;
+  name: string;
+  phone: string | null;
+  branch_code: string | null;
+  branch_name: string | null;
+  business_name: string | null;
+  group_ref: string | null;
+  group_name: string | null;
+  joined_on: string | null;
+  active: boolean;
+  copied_at: string;
+  loans: BorrowerLoan[];
+  /** True when core banking answered; false shows the directory's copy. */
+  live: boolean;
+  payments: MoneyIn[];
+  directory: DirectoryState | null;
+}
+
+export type LoanBand = "all" | "late_1_7" | "late_8_30" | "late_31_90" | "late_90" | "closed";
+
+export interface LoanRow {
+  ref: string;
+  borrower_ref: string;
+  borrower_name: string | null;
+  product_name: string;
+  status: LoanStatus;
+  outstanding_kobo: number;
+  arrears_kobo: number;
+  days_late: number;
+  held_kobo: number;
+}
+
+export interface LoanPage {
+  items: LoanRow[];
+  counts: Record<LoanBand | "current" | "in_arrears", number>;
+  total: number;
+  limit: number;
+  offset: number;
+  directory: DirectoryState | null;
+}
+
+export interface LoanRecord {
+  ref: string;
+  core_id: string;
+  borrower_ref: string;
+  borrower_name: string | null;
+  borrower_core_id: string | null;
+  product: string;
+  product_name: string;
+  principal_kobo: number;
+  disbursed_on: string | null;
+  status: LoanStatus;
+  outstanding_kobo: number;
+  arrears_kobo: number;
+  days_late: number;
+  copied_at: string;
+  virtual_account: { number: string; provider: string } | null;
+  live: boolean;
+  /** From core banking; null when it didn't answer. */
+  schedule: { number: number; due_on: string; due_kobo: number; paid_kobo: number }[] | null;
+  held_kobo: number;
+  money_in: MoneyIn[];
+  directory: DirectoryState | null;
+}
+
+export type Found = { to: "loan" | "borrower"; ref: string } | { to: "payments"; q: string };
+
 /** The API said no. `status` is the HTTP status; `message` is written for people. */
 export class ApiError extends Error {
   constructor(
@@ -271,6 +400,13 @@ export const api = {
     ),
   reject: (proposalId: number, reason: string) =>
     request<{ proposal_id: number; status: "rejected" }>("POST", `/proposals/${proposalId}/reject`, { body: { reason } }),
+  borrowers: (query: { view?: BorrowerView; q?: string; limit?: number; offset?: number }) =>
+    request<BorrowerPage>("GET", "/borrowers", { query }),
+  borrower: (ref: string) => request<BorrowerRecord>("GET", `/borrowers/${encodeURIComponent(ref)}`),
+  loans: (query: { band?: LoanBand; q?: string; limit?: number; offset?: number }) =>
+    request<LoanPage>("GET", "/loans", { query }),
+  loan: (ref: string) => request<LoanRecord>("GET", `/loans/${encodeURIComponent(ref)}`),
+  find: (q: string) => request<Found>("GET", "/find", { query: { q } }),
   audit: (query: { actor?: string; action?: string; subject?: string; before?: number | null; limit?: number }) =>
     request<AuditPage>("GET", "/audit", { query }),
 };

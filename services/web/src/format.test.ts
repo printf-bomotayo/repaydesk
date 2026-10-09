@@ -1,4 +1,4 @@
-import { actorLabel, day, naira, stamp } from "./format";
+import { actorLabel, ago, bankToday, day, fullDay, naira, phone, stamp } from "./format";
 
 test("naira shows whole naira plainly and kobo only when there are some", () => {
   expect(naira(60_500_00)).toBe("₦60,500");
@@ -25,4 +25,16 @@ test("actors read as words", () => {
   expect(actorLabel("rule:virtual_account")).toBe("Rule: virtual account");
   expect(actorLabel("agent:investigator")).toBe("Agent: investigator");
   expect(actorLabel("amaka")).toBe("amaka");
+});
+
+test("dates and phones for the borrower and loan pages", () => {
+  expect(fullDay("2026-08-05")).toBe("5 Aug 2026");
+  // 23:30 UTC on 8 Oct is already 9 Oct in Lagos, as Fineract dates arrears.
+  expect(bankToday(new Date("2026-10-08T23:30:00Z"))).toBe("2026-10-09");
+  const now = new Date("2026-10-09T10:00:00Z");
+  expect(ago("2026-10-09T09:59:50Z", now)).toBe("just now");
+  expect(ago("2026-10-09T09:56:00Z", now)).toBe("4 minutes ago");
+  expect(ago("2026-10-09T07:00:00Z", now)).toBe("3 hours ago");
+  expect(phone("07005566957")).toBe("0700 556 6957");
+  expect(phone(null)).toBe("–");
 });

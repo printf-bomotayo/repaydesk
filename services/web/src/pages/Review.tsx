@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, ApiError, type QueueItem, type QueueView } from "../api";
 import { Checks } from "../components/Checks";
+import { LoanLink } from "../components/records";
 import { announceChange, Failed, Loading, Pager, useLoad, useToast } from "../components/common";
 import { actorLabel, CHANNEL_LABEL, day, naira } from "../format";
 import { useSession } from "../session";
@@ -163,7 +164,7 @@ function Proposal({ item, readOnly, onDecided }: { item: QueueItem; readOnly: bo
         ) : (
           item.allocations.map((a) => (
             <div key={a.loan_ref} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-              <span className="mono">{a.loan_ref}</span>
+              <LoanLink loanRef={a.loan_ref} />
               <span className="num">{naira(a.amount_kobo)}</span>
             </div>
           ))

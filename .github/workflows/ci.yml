@@ -97,6 +97,9 @@ jobs:
           password=$(grep '^STAFF_DEMO_PASSWORD=' .env | cut -d= -f2-)
           token=$(curl -fsS -X POST http://127.0.0.1:18082/api/auth/sign-in -H 'Content-Type: application/json'             -d "{\"staff_id\":\"hadiza\",\"password\":\"$password\"}" | python -c 'import json,sys; print(json.load(sys.stdin)["token"])')
           curl -fsS http://127.0.0.1:18082/api/lines?limit=1 -H "Authorization: Bearer $token" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["total"] > 0, d; print(d["total"], "lines")'
+          # The seed copied the book into the directory, and a loan's page reads Fineract live.
+          ref=$(curl -fsS "http://127.0.0.1:18082/api/loans?limit=1" -H "Authorization: Bearer $token" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["total"] > 0, d; print(d["items"][0]["ref"])')
+          curl -fsS "http://127.0.0.1:18082/api/loans/$ref" -H "Authorization: Bearer $token" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["live"] and d["schedule"], d; print(d["ref"], "read live")'
       - run: pip install -e "services/core[dev]"
       - name: contract tests against Fineract and Odoo
         working-directory: services/core

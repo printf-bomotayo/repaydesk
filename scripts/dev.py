@@ -8,6 +8,7 @@
     python scripts/dev.py ingest    take in the week's statement files, then deliver its webhooks to the API
     python scripts/dev.py match     propose matches for new lines by rule (certain cases only)
     python scripts/dev.py score     score the live proposals against the truth file
+    python scripts/dev.py directory copy the book from Fineract into the borrower directory now
     python scripts/dev.py test      unit, contract and database tests (database tests skip without the stack)
     python scripts/dev.py itest     contract tests against the running Fineract and Odoo
     python scripts/dev.py lint      ruff, and the web app's type check
@@ -136,6 +137,9 @@ def main(task: str) -> None:
             "--replay-webhooks", "http://api:8000")
     elif task == "match":
         run("docker", "compose", "run", "--rm", "--build", "match")
+    elif task == "directory":
+        # The directory service does this every 15 minutes; this is for when you can't wait.
+        run("docker", "compose", "run", "--rm", "--build", "directory", "python", "-m", "repaydesk.directory")
     elif task == "score":
         # Proposals against the truth file; exits non-zero if any proposal is wrong.
         run("docker", "compose", "run", "--rm", "match", "python", "-m", "repaydesk.scoring", *sys.argv[2:])

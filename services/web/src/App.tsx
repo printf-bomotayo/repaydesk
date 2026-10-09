@@ -3,14 +3,16 @@ import { Shell } from "./components/Shell";
 import { Loading, ToastProvider } from "./components/common";
 import { Review } from "./pages/Review";
 import { Audit } from "./pages/Audit";
+import { BorrowerDetail, Borrowers } from "./pages/Borrowers";
 import { Ingestion } from "./pages/Ingestion";
 import { Later } from "./pages/Later";
 import { LineDetail } from "./pages/LineDetail";
+import { LoanDetail, Loans } from "./pages/Loans";
 import { Payments } from "./pages/Payments";
 import { SignIn } from "./pages/SignIn";
 import { SessionProvider, useSession } from "./session";
 
-const LATER = ["/today", "/borrowers", "/loans", "/runs", "/collections", "/measures"];
+const LATER = ["/today", "/runs", "/collections", "/measures"];
 
 function Routed() {
   const { staff, checking } = useSession();
@@ -23,6 +25,10 @@ function Routed() {
         <Route path="/payments" element={<Payments />} />
         <Route path="/payments/:id" element={<LineDetail />} />
         <Route path="/review" element={<Review />} />
+        <Route path="/borrowers" element={<Borrowers />} />
+        <Route path="/borrowers/:ref" element={<BorrowerDetail />} />
+        <Route path="/loans" element={<Loans />} />
+        <Route path="/loans/:ref" element={<LoanDetail />} />
         <Route path="/ingestion" element={<Ingestion />} />
         <Route path="/audit" element={<Audit />} />
         {LATER.map((p) => (

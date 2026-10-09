@@ -846,3 +846,163 @@ on the server, but the largest queue tried has 214 proposals.
 **Plan.** Milestone 2, rules, approvals and gateway: the approval queue, on screen.
 
 ---
+
+## Chunk 7 — Borrowers and Loans, on a borrower directory ✅
+
+_Date: 2026-10-09_
+
+**What & why.** _Metaphor: the branch's card index and the vault._ A teller looking for "the
+Ifeoma with the pharmacy" flips through the card index by the door: quick, searchable, copied
+from the ledgers each morning. But before paying anything out, they walk to the vault and read the
+ledger itself. The index is for finding; the ledger is for deciding.
+
+This chunk builds both halves.
+
+- **The card index: a borrower directory.** Repaydesk's own copy of who borrows what: 2,024
+  borrowers and 2,130 loans with their balances. A new `directory` service copies it from Fineract
+  every 15 minutes, in about 20 seconds. The seed runs one sync at the end, so a fresh demo
+  doesn't wait. Each sync writes only what changed and removes what Fineract no longer has, in
+  one transaction. One sync runs at a time. A failed sync is recorded, shown on the screens, and
+  leaves the last copy in place.
+- **Borrowers.** Search by name, trading name, phone (in any format, `+234…` too), customer
+  reference or loan. Filters for in arrears and payments not yet posted, with counts. Each row:
+  branch, trading name, loans, arrears, and money Repaydesk holds for them.
+- **Loans.** Most overdue first, with the mockup's bands (1 to 7 days late, 8 to 30, 31 to 90,
+  over 90) and closed. Header: "2,130 loans · 646 in arrears".
+- **The vault: each record's own page reads Fineract live.**
+  - A loan: principal, outstanding, what's left **if held payments post**, its virtual account,
+    the schedule (paid, part paid, late, "late · payment held"), and **money in, one timeline**:
+    Fineract's repayments with their channel, then Repaydesk's held payments as hollow dots
+    linking to their line.
+  - A borrower: profile, loans with their state, and every payment from every channel.
+  - Both link into Fineract's own staff screens.
+  - If Fineract doesn't answer, the page says so and shows the copy with its time.
+- **The search box** now opens a loan reference (`ln2026 001396` works), a customer reference or
+  a phone directly. Anything else still searches payments.
+- **Loan references are links everywhere:** Payments, the review queue and a line's case file.
+
+**Decisions worth recording.** [ADR 0006](docs/adr/0006-borrower-directory.md).
+
+*A copy for finding, live for deciding.* Fineract can't search the way staff do. Its name
+search is case-sensitive, trading names only match exactly, and listing the book takes seconds and
+many calls. Asking it on every keystroke would be slow and heavy on the bank's core system. But
+a reviewer about to approve must see the loan now, not 15 minutes ago. So lists read the copy and
+say how old it is, and a single record reads Fineract.
+
+*Through the adapter contract, like everything else.* The directory reads through a new port,
+`CoreBankingDirectory` (`list_borrowers`, `list_loans`). Fineract and the in-memory reference
+adapter both implement it, and a contract test checks the listing agrees with single reads. A
+bank's own core banking system plugs in the same way.
+
+*Two Fineract quirks, absorbed in the adapter.*
+- **Days late.** Fineract's loan list leaves `pastDueDays` at 0 for every loan; only a single
+  loan's read fills it. The contract test caught it: 0 days late where the loan's own page said 3.
+  The list's summary does carry the date the loan fell overdue, which gives the same number.
+- **Trading names.** These sit in a datatable that can list which clients have a row but not the
+  rows, so each name is its own call (1,108 of them, about 6 seconds). The adapter keeps them
+  between syncs, reads only new ones, and rereads all once a day in case one was edited.
+
+*Held payments are shown, never subtracted.* "Outstanding" is Fineract's figure. "If held
+payments post" is shown beside it, so nobody mistakes an unapproved proposal for a posted
+repayment, and a borrower who paid is never shown as unpaid. A rejected proposal holds nothing.
+
+*Kobo stays integer through SQL.* Found in the first live check: Postgres returns a sum of
+`bigint` as `numeric`, and the API sent arrears as the string `"6050000"`. Every sum is now cast
+back to `bigint`, and a test checks the type.
+
+**Principles.** _Same card-index metaphor._ *Find in the index, decide at the vault.* *Say how
+old the copy is.* *Absorb the quirk where it lives* (the adapter), so the screens never learn it.
+*Never let a pending payment pass for a posted one.*
+
+**Files.**
+
+- New:
+  - `migrations/005_directory.sql`, `directory.py`, `records.py`;
+  - `tests/test_records.py`;
+  - `docs/adr/0006-borrower-directory.md`;
+  - `web/src/pages/Borrowers.tsx`, `Loans.tsx`, `Records.test.tsx`, `components/records.tsx`.
+- Changed:
+  - `adapters/ports.py` (the directory port; a repayment's channel), `adapters/fineract.py`,
+    `adapters/memory.py`, `tests/contract/test_contracts.py`;
+  - `api.py` (`/borrowers`, `/loans`, `/find`; a read-only Fineract client), `seed.py`;
+  - `compose.yaml` (the `directory` service; Fineract settings for the API), `scripts/dev.py`
+    and `Makefile` (`directory` task), `.github/workflows/ci.yml` (smoke-checks a live loan read);
+  - `web/src/api.ts`, `format.ts`, `format.test.ts`, `App.tsx`, `components/Shell.tsx` (search box),
+    `pages/Payments.tsx`, `Review.tsx`, `LineDetail.tsx`, `Later.tsx`, `styles.css`;
+  - `README.md`.
+
+**Depends on / blocks.** Depends on chunks 1 (Fineract adapter), 3 (proposals) and 5 (web app).
+Blocks chunk 8: the posting gateway's postings will appear on these pages as Fineract repayments
+linked back to their lines (the `RD-P` reference link is already in place). Blocks milestone 3:
+the agent's fuzzy borrower search runs over this directory.
+
+**Verification.** `ruff` clean.
+
+- `pytest`: 99 passed, 8 deselected. 10 new tests:
+  - a sync copies the book, then only what changed (a repayment, a removed borrower and their loans);
+  - a failed sync is recorded and keeps the last copy;
+  - only one sync runs at a time;
+  - search by surname, `+234` phone, trading name, loan and customer reference;
+  - a borrower's page with live and held payments;
+  - a page that falls back to the copy when core banking fails;
+  - a loan's schedule and held amount (and nothing held after a rejection);
+  - loan bands and their counts;
+  - the search box's routing;
+  - the endpoints over HTTP.
+- Contract tests against the real stack: 16 passed. The new one checks Fineract's listing against
+  its single reads, and a repayment's channel.
+- `tsc` clean; `vitest`: 24 passed. The 4 new screen tests cover:
+  - a loan ref in the search box opening the loan, with its schedule notes, "If held payments
+    post" and the Fineract link;
+  - a phone opening the borrower, and plain text still searching payments;
+  - Fineract down;
+  - loan bands and borrower search through the address.
+
+In the browser, against the running stack:
+
+- Loans: 2,130, most overdue first, band counts matching the API.
+- LN-2026-001209 (Zainab Shehu): ₦242,000 outstanding live, ₦60,500 held, "If held payments
+  post" ₦181,500, instalment 3 "late · payment held", and the timeline with branch cash and
+  virtual account repayments then the held payment.
+- Her borrower page: both loans (one closed), four payments across two loans.
+- "ifeoma pharmacy" found the two Ifeoma Pharmacy borrowers at Onitsha and Ikeja, the mockup's
+  namesake case.
+- The search box opened a loan, a borrower by `+234` phone, and a borrower by customer reference,
+  and sent `SHEHU` to payments.
+- No console errors.
+
+What it does not prove:
+
+- **Fineract links.** They point at Mifos's routes, which are in its bundled app
+  (`clients/:id/general`, `loans-accounts/:id/general`). I didn't click through: Mifos's sign-in
+  didn't complete in the automated browser.
+- **Typing in the browser.** Typed input didn't reach this tab and screenshots timed out, so the
+  search box was driven by script. The API log confirms each search went where it should.
+- **Phone width**, as in chunks 5 and 6.
+- **Speed at scale.** A loan's page takes about 0.5 s and a borrower's about 2 s: they read
+  Fineract live, one loan after another. Fine at this size; a bank with 50,000 borrowers would
+  want the directory's sync and these reads measured.
+- **Test borrowers.** The contract tests leave a few test borrowers (`CUS-T…`) in the local
+  Fineract, so they appear in the local directory (2,024 rather than 2,000). The hosted demo won't
+  run tests against its own Fineract.
+
+**PR package.**
+
+- Subject: `Chunk 7: Borrowers and Loans, on a borrower directory`
+- Description:
+  > Adds a borrower directory: Repaydesk's copy of the book, synced from Fineract every 15 minutes
+  > by a new `directory` service through a new adapter port, for search and lists. Borrowers by
+  > name, trading name, phone or loan; loans by how late. A borrower's or loan's own page reads
+  > Fineract live (balances, schedule, repayments with their channel) and shows beside it the
+  > payments Repaydesk holds but hasn't posted, with what the balance would be once they post. If
+  > Fineract doesn't answer, the page says so and shows the copy. The search box opens a loan,
+  > customer reference or phone directly, and loan references link to their loan everywhere.
+  >
+  > Fineract's loan list reports 0 days late for every loan; the adapter derives it from the
+  > overdue date instead, caught by a new contract test. ADR 0006 records the copy-for-finding,
+  > live-for-deciding split.
+
+**Plan.** Milestone 2, rules, approvals and gateway: the records a reviewer checks before
+deciding, on screen.
+
+---
