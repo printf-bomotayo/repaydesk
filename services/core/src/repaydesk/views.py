@@ -6,7 +6,11 @@ is paged, because a real bank's week is tens of thousands of lines, not the demo
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import psycopg
+
+from repaydesk.domain import BANK_TIMEZONE, bank_today
 
 STATUSES = ("new", "proposed", "approved", "posted", "suspense", "excluded", "duplicate")
 
@@ -203,7 +207,103 @@ def audit(conn: psycopg.Connection, actor: str | None = None, action: str | None
 
 
 def summary(conn: psycopg.Connection) -> dict:
-    """Small counts for the navigation: lines by status, and proposals waiting for a person."""
+    """Small counts for the navigation: lines by status, proposals waiting for a person, and
+    postings that stopped."""
     by_status = dict(conn.execute("SELECT status, count(*) FROM payment_lines GROUP BY 1").fetchall())
     pending = conn.execute("SELECT count(*) FROM proposals WHERE status = 'pending'").fetchone()[0]
-    return {"lines": {s: by_status.get(s, 0) for s in STATUSES}, "pending_proposals": pending}
+    failed = conn.execute("SELECT count(*) FROM posting_outbox WHERE status = 'failed'").fetchone()[0]
+    return {"lines": {s: by_status.get(s, 0) for s in STATUSES}, "pending_proposals": pending,
+            "failed_postings": failed}
+
+
+# ---- today -------------------------------------------------------------------------------------
+
+# How long money has sat unmatched, counted from its value date: the day it reached the bank.
+AGE_BANDS = (("0 to 2 days", 0, 2), ("3 to 7 days", 3, 7), ("Over 7 days", 8, None))
+
+_STOPPED = """
+SELECT o.id, o.line_id, l.channel, l.narration, o.amount_kobo, o.idempotency_key, o.status, o.attempts,
+       o.last_error, o.next_attempt_at, o.allocations, o.core_transactions, last.action, last.at
+FROM posting_outbox o JOIN payment_lines l ON l.id = o.line_id
+LEFT JOIN LATERAL (
+    SELECT a.action, a.at FROM audit_log a
+    WHERE a.subject = 'payment_line:' || o.line_id AND left(a.action, 8) = 'posting.'
+    ORDER BY a.id DESC LIMIT 1
+) last ON true
+WHERE o.status = 'failed' OR (o.status = 'pending' AND o.attempts > 0)
+ORDER BY o.status, o.id
+LIMIT 100
+"""
+
+
+def today(conn: psycopg.Connection, two_person_above_kobo: int) -> dict:
+    """The morning page: the latest statement week at a glance, and the work waiting for a person.
+
+    The week is the seven value dates ending on the latest line held, not the calendar's:
+    statements arrive a day or more late, and a quiet morning shouldn't read as an empty week.
+    The queues (review, unmatched money, postings that stopped) count everything, whenever it came.
+    """
+    on = bank_today()
+    latest = conn.execute("SELECT max(value_date) FROM payment_lines").fetchone()[0]
+    end = latest or on
+    week = {"start": end - timedelta(days=6), "end": end}
+    in_week = "l.value_date BETWEEN %(start)s AND %(end)s"
+
+    by_status = {r[0]: (r[1], r[2]) for r in conn.execute(
+        f"SELECT l.status, count(*), coalesce(sum(l.amount_kobo), 0)::bigint FROM payment_lines l "
+        f"WHERE {in_week} GROUP BY 1", week).fetchall()}
+    # A line counts as matched by rule while a rule's proposal for it stands: pending or approved.
+    by_rule = ("EXISTS (SELECT 1 FROM proposals p WHERE p.line_id = l.id AND p.proposed_by LIKE 'rule:%%' "
+               "AND p.status IN ('pending', 'approved'))")
+    channels = conn.execute(
+        f"SELECT l.channel, count(*), count(*) FILTER (WHERE {by_rule}), coalesce(sum(l.amount_kobo), 0)::bigint "
+        f"FROM payment_lines l WHERE {in_week} AND l.status <> 'duplicate' GROUP BY 1 ORDER BY 2 DESC, 1",
+        week).fetchall()
+
+    review = conn.execute(
+        "SELECT count(*), count(*) FILTER (WHERE l.amount_kobo > %s), coalesce(sum(l.amount_kobo), 0)::bigint "
+        "FROM proposals p JOIN payment_lines l ON l.id = p.line_id WHERE p.status = 'pending'",
+        (two_person_above_kobo,)).fetchone()
+    unmatched = conn.execute(
+        "SELECT %s - l.value_date, l.amount_kobo FROM payment_lines l WHERE l.status IN ('new', 'suspense')",
+        (on,)).fetchall()
+    postings = dict(conn.execute(
+        "SELECT CASE WHEN status = 'pending' AND attempts > 0 THEN 'retrying' WHEN status = 'pending' "
+        "THEN 'waiting' ELSE status END, count(*) FROM posting_outbox "
+        "WHERE status <> 'posted' OR (posted_at AT TIME ZONE %s)::date = %s GROUP BY 1",
+        (BANK_TIMEZONE, on)).fetchall())
+    stopped = conn.execute(_STOPPED).fetchall()
+
+    received = [v for k, v in by_status.items() if k != "duplicate"]
+    lines_received = sum(c for c, _ in received)
+    return {
+        "as_of": on.isoformat(),
+        "week": {k: v.isoformat() for k, v in week.items()},
+        "received": {"lines": lines_received, "amount_kobo": sum(a for _, a in received),
+                     "duplicates": by_status.get("duplicate", (0, 0))[0]},
+        "by_status": {s: {"lines": by_status.get(s, (0, 0))[0], "amount_kobo": by_status.get(s, (0, 0))[1]}
+                      for s in STATUSES if s != "duplicate"},
+        "matched_by_rule": sum(c[2] for c in channels),
+        "channels": [{"channel": c[0], "lines": c[1], "by_rule": c[2], "amount_kobo": c[3]} for c in channels],
+        "review": {"pending": review[0], "two_person": review[1], "amount_kobo": review[2],
+                   "two_person_above_kobo": two_person_above_kobo},
+        "unmatched": {
+            "lines": len(unmatched), "amount_kobo": sum(a for _, a in unmatched),
+            "oldest_days": max((d for d, _ in unmatched), default=None),
+            "bands": [{"label": label,
+                       "lines": sum(1 for d, _ in unmatched if lo <= d and (hi is None or d <= hi)),
+                       "amount_kobo": sum(a for d, a in unmatched if lo <= d and (hi is None or d <= hi))}
+                      for label, lo, hi in AGE_BANDS],
+        },
+        "postings": {
+            "posted_today": postings.get("posted", 0), "waiting": postings.get("waiting", 0),
+            "retrying": postings.get("retrying", 0), "failed": postings.get("failed", 0),
+            "stopped": [{
+                "outbox_id": r[0], "line_id": r[1], "channel": r[2], "narration": r[3], "amount_kobo": r[4],
+                "idempotency_key": r[5], "status": r[6], "attempts": r[7], "last_error": r[8],
+                "next_attempt_at": _iso(r[9]), "loan_refs": [a["loan_ref"] for a in r[10]],
+                "posted_in_core": len(r[11] or []),
+                "refused": r[12] == "posting.refused", "last_attempt_at": _iso(r[13]),
+            } for r in stopped],
+        },
+    }

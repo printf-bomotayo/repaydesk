@@ -22,6 +22,45 @@ export interface Config {
 export interface Summary {
   lines: Record<Status, number>;
   pending_proposals: number;
+  failed_postings: number;
+}
+
+export interface StoppedPosting {
+  outbox_id: number;
+  line_id: string;
+  channel: Channel;
+  narration: string;
+  amount_kobo: number;
+  idempotency_key: string;
+  /** failed: waits for a person. pending: the gateway retries on its own, at next_attempt_at. */
+  status: "pending" | "failed";
+  attempts: number;
+  last_error: string | null;
+  next_attempt_at: string | null;
+  loan_refs: string[];
+  /** Fineract repayments already posted for it. */
+  posted_in_core: number;
+  /** The gateway refused the approval itself: a retry would be refused again. */
+  refused: boolean;
+  last_attempt_at: string | null;
+}
+
+/** The morning page: the latest statement week, and the work waiting for a person. */
+export interface Today {
+  as_of: string;
+  week: { start: string; end: string };
+  received: { lines: number; amount_kobo: number; duplicates: number };
+  by_status: Record<Exclude<Status, "duplicate">, { lines: number; amount_kobo: number }>;
+  matched_by_rule: number;
+  channels: { channel: Channel; lines: number; by_rule: number; amount_kobo: number }[];
+  review: { pending: number; two_person: number; amount_kobo: number; two_person_above_kobo: number };
+  unmatched: {
+    lines: number;
+    amount_kobo: number;
+    oldest_days: number | null;
+    bands: { label: string; lines: number; amount_kobo: number }[];
+  };
+  postings: { posted_today: number; waiting: number; retrying: number; failed: number; stopped: StoppedPosting[] };
 }
 
 export interface LineRow {
@@ -403,6 +442,9 @@ export const api = {
     request<{ token: string; staff: Staff; expires_in: number }>("POST", "/auth/sign-in", { body: { staff_id, password } }),
   me: () => request<Staff & { two_person_above_kobo: number }>("GET", "/me"),
   summary: () => request<Summary>("GET", "/summary"),
+  today: () => request<Today>("GET", "/today"),
+  retryPosting: (outboxId: number) =>
+    request<{ outbox_id: number; status: "retrying" }>("POST", `/postings/${outboxId}/retry`),
   lines: (query: { status?: string; channel?: string; q?: string; limit?: number; offset?: number }) =>
     request<LinePage>("GET", "/lines", { query }),
   line: (id: string) => request<LineDetail>("GET", `/lines/${encodeURIComponent(id)}`),

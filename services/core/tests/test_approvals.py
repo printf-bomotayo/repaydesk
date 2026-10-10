@@ -309,3 +309,72 @@ def test_a_morning_in_the_queue(client):
     assert detail["posting"]["idempotency_key"] == f"RD-P{group}" and detail["posting"]["status"] == "pending"
     assert c.get("/proposals/999999", headers=hadiza).status_code == 404
     assert [i["proposal_id"] for i in c.get("/queue", headers=amaka).json()["items"]] == [small]
+
+
+def _gateway_stops(conn, outbox_id: int, action: str, error: str) -> None:
+    """What the gateway writes when a posting stops: the row failed, and its audit entry."""
+    line_id = _one(conn, "UPDATE posting_outbox SET status = 'failed', attempts = attempts + 1, last_error = %s "
+                         "WHERE id = %s RETURNING line_id", error, outbox_id)
+    db.audit(conn, "service:gateway", action, f"payment_line:{line_id}", {"outbox_id": outbox_id, "error": error})
+
+
+@pytest.mark.db
+def test_a_person_sends_a_failed_posting_back_and_the_gateway_wakes(client, schema_url):
+    c, conn = client
+    closed = approvals.approve(conn, _proposal(conn, "R1", 60_500 * N), OFFICER).outbox_id
+    forged = approvals.approve(conn, _proposal(conn, "R2", 40_000 * N), OFFICER).outbox_id
+    waiting = approvals.approve(conn, _proposal(conn, "R3", 30_000 * N), OFFICER).outbox_id
+    _gateway_stops(conn, closed, "posting.failed", "Fineract refused: loan is closed")
+    _gateway_stops(conn, forged, "posting.refused", "refused: approved_by names someone who didn't decide")
+    amaka, hadiza = _as(c, "amaka"), _as(c, "hadiza")
+
+    stopped = {p["outbox_id"]: p for p in c.get("/today", headers=hadiza).json()["postings"]["stopped"]}
+    assert set(stopped) == {closed, forged}
+    assert not stopped[closed]["refused"] and stopped[forged]["refused"]
+    assert stopped[closed]["last_error"] == "Fineract refused: loan is closed"
+    assert c.get("/summary", headers=hadiza).json()["failed_postings"] == 2
+
+    r = c.post(f"/postings/{closed}/retry", headers=hadiza)
+    assert r.status_code == 403 and r.json()["refused"] == "read_only"
+    r = c.post(f"/postings/{forged}/retry", headers=amaka)
+    assert r.status_code == 409 and r.json()["refused"] == "refused_by_gateway"
+    r = c.post(f"/postings/{waiting}/retry", headers=amaka)
+    assert r.status_code == 409 and r.json()["refused"] == "not_failed"
+    assert c.post("/postings/999999/retry", headers=amaka).status_code == 404
+
+    with psycopg.connect(schema_url, autocommit=True) as listener:
+        listener.execute("LISTEN posting_outbox")
+        r = c.post(f"/postings/{closed}/retry", headers=amaka)
+        assert r.status_code == 200 and r.json() == {"outbox_id": closed, "status": "retrying"}
+        woke = [n.payload for n in listener.notifies(timeout=5, stop_after=1)]
+    assert woke == [str(closed)]
+    row = conn.execute("SELECT status, next_attempt_at, attempts, last_error FROM posting_outbox WHERE id = %s",
+                       (closed,)).fetchone()
+    assert row == ("pending", None, 1, "Fineract refused: loan is closed")  # the history stays on the row
+    last = conn.execute("SELECT actor, action, detail FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
+    assert last[:2] == ("amaka", "posting.retry_requested") and last[2]["outbox_id"] == closed
+    assert c.post(f"/postings/{closed}/retry", headers=amaka).status_code == 409  # already back in the tray
+
+
+@pytest.mark.db
+def test_today_counts_the_week_and_the_work_waiting(client):
+    c, conn = client
+    _proposal(conn, "T1", 126_000 * N)
+    _proposal(conn, "T2", 875_000 * N, split=5)
+    _line(conn, "T3", 36_300 * N)  # nothing proposed: unmatched money
+    posted = approvals.approve(conn, _proposal(conn, "T4", 60_500 * N), OFFICER).outbox_id
+    t = c.get("/today", headers=_as(c, "hadiza")).json()
+
+    assert t["week"] == {"start": "2026-10-01", "end": "2026-10-07"}  # the seven days ending on the latest line
+    assert t["received"] == {"lines": 4, "amount_kobo": (126_000 + 875_000 + 36_300 + 60_500) * N, "duplicates": 0}
+    assert t["by_status"]["proposed"]["lines"] == 2 and t["by_status"]["approved"]["lines"] == 1
+    assert t["matched_by_rule"] == 3
+    assert t["channels"] == [{"channel": "bank_csv", "lines": 4, "by_rule": 3,
+                              "amount_kobo": (126_000 + 875_000 + 36_300 + 60_500) * N}]
+    assert t["review"] == {"pending": 2, "two_person": 1, "amount_kobo": (126_000 + 875_000) * N,
+                           "two_person_above_kobo": approvals.TWO_PERSON_ABOVE_KOBO}
+    assert t["unmatched"]["lines"] == 1 and t["unmatched"]["amount_kobo"] == 36_300 * N
+    assert sum(b["lines"] for b in t["unmatched"]["bands"]) == 1
+    assert t["postings"] | {"stopped": []} == {"posted_today": 0, "waiting": 1, "retrying": 0, "failed": 0,
+                                               "stopped": []}
+    assert posted and t["postings"]["stopped"] == []

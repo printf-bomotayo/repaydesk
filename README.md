@@ -7,7 +7,7 @@ approve everything that moves money or reaches a customer.
 It runs on open-source finance systems: **Apache Fineract** as core banking and **Odoo
 Community** as the ledger. Every borrower, loan and payment in it is synthetic.
 
-> Status: milestone 2 of 6 in progress. Built in chunks, each verified and logged in
+> Status: milestones 1 and 2 of 6 done (tags `m1`, `m2`); milestone 3 next. Built in chunks, each verified and logged in
 > [`CHUNK-LOG.md`](CHUNK-LOG.md). See [the roadmap](#roadmap).
 
 ## The problem
@@ -48,7 +48,12 @@ collection journals in Odoo, and writes a week of incoming payments to `data/inb
 | Postgres | 127.0.0.1:15432 |
 | The week's payment files | `data/inbox/` |
 
-Other tasks: `seed`, `ingest`, `match`, `score`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
+To see milestone 2 end to end, run `python scripts/dev.py demo`: a new bank statement arrives, is
+ingested and matched by rule, Amaka and Tunde approve through the API, the gateway posts, and the
+demo finds each repayment in Fineract and each journal entry in Odoo. Then open **Today**.
+[`docs/demo.md`](docs/demo.md) is the same story to click through, for showing someone.
+
+Other tasks: `seed`, `ingest`, `match`, `score`, `demo`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
 and for the web app `web` (live reload on http://127.0.0.1:5173, needs Node 24) and `webtest`
 (`python scripts/dev.py <task>`).
 
@@ -128,8 +133,7 @@ Built so far (milestone 1):
   live (balances, schedule, every repayment and its channel) and shows beside it the payments
   Repaydesk holds but hasn't posted, so a borrower who paid is never shown as unpaid. If Fineract
   doesn't answer, the page says so and shows the copy. The search box opens a loan, customer
-  reference or phone directly. The Today screen of the
-  [approved mockup](https://claude.ai/artifact/3zvA1ZuM8f1CHQmRi89QiV) arrives in chunk 9.
+  reference or phone directly.
 - **The posting gateway** (chunk 8, `services/gateway`, .NET 10): the only writer to Fineract and
   the ledger. Woken by Postgres the moment a match is approved, it rechecks the approval against
   the decisions themselves, posts the repayment to Fineract, then a journal entry to Odoo that
@@ -138,9 +142,18 @@ Built so far (milestone 1):
   a refusal stops and waits for a person. Each service now has its own Fineract login: read only
   for the API, directory and matching, repayments only for the gateway. See
   [ADR 0007](docs/adr/0007-posting-gateway.md). `python scripts/dev.py gateway` runs its tests.
+- **Today, and milestone 2 end to end** (chunk 9): the page staff land on, from the
+  [approved mockup](https://claude.ai/artifact/3zvA1ZuM8f1CHQmRi89QiV). The latest statement week
+  (money received, the share matched by rule, where the lines are, each channel), the review
+  queue's size and how many need two people, unmatched money by age, and the postings: posted
+  today, on the way, retrying, and stopped. A stopped posting shows Fineract's or Odoo's reason and,
+  once the cause is fixed, a person sends it back with **Retry posting**; the gateway rechecks the
+  approval, and the key keeps it from posting twice. `python scripts/dev.py demo` runs the whole
+  milestone against the stack.
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
-  comes up, gets seeded, the contract tests run against it, and an approved match is posted to
-  Fineract and the ledger by the gateway.
+  comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
+  statement ingested, matched, approved by two people where needed, posted, and found in Fineract
+  and Odoo.
 
 Decisions are recorded in [`docs/adr/`](docs/adr/).
 
@@ -149,7 +162,7 @@ Decisions are recorded in [`docs/adr/`](docs/adr/).
 | Milestone | Built | Demo at the end |
 |---|---|---|
 | 1. Foundations and data ✅ | Compose stack, adapters and contract tests, synthetic generator, CI | `make up` seeds 2,000 borrowers and a week of payments; one trace in Jaeger |
-| 2. Rules, approvals, gateway | Ingestion, rule matching, approval queue with role limits, .NET posting gateway, audit | Rule matches approved and visible in Fineract and Odoo |
+| 2. Rules, approvals, gateway ✅ | Ingestion, rule matching, approval queue with role limits, .NET posting gateway, audit | Rule matches approved and visible in Fineract and Odoo |
 | 3. Investigator agent, MCP, evals | Read-only MCP servers, investigator on the Claude Agent SDK, eval set | The agent places "MAMA CHIKA PROVISIONS" with its evidence |
 | 4. Collections | Arrears buckets, drafting agent under a written policy, SMS/WhatsApp simulators | A portfolio manager approves a morning's drafts |
 | 5. Reporting and measurement | Daily close pack, reporting MCP server, baseline | Before-and-after numbers |

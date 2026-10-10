@@ -1,8 +1,9 @@
 import { Link, useParams } from "react-router";
 import { api, type LineDetail as Line } from "../api";
-import { ExternalLink, Failed, Loading, Pill, useLoad } from "../components/common";
+import { ExternalLink, Failed, Loading, Pill, useLoad, useOnChange } from "../components/common";
 import { LoanLink } from "../components/records";
 import { Checks } from "../components/Checks";
+import { RetryPosting } from "../components/RetryPosting";
 import { actorLabel, CHANNEL_LABEL, day, naira, stamp } from "../format";
 import { useSession } from "../session";
 import { lineHref } from "./Payments";
@@ -18,11 +19,13 @@ const ACTION: Record<string, string> = {
   "posting.retry_scheduled": "Posting retried later",
   "posting.failed": "Posting failed; needs a person",
   "posting.refused": "Posting refused by the gateway",
+  "posting.retry_requested": "Sent back to the posting gateway",
 };
 
 export function LineDetail() {
   const { id = "" } = useParams();
   const { data, error, reload } = useLoad(() => api.line(id), [id]);
+  useOnChange(reload); // a retry from the posting panel
 
   return (
     <>
@@ -153,7 +156,12 @@ function CaseFile({ line }: { line: Line }) {
             </div>
           </section>
 
-          {line.posting && <PostingPanel posting={line.posting} />}
+          {line.posting && (
+            <PostingPanel
+              posting={line.posting}
+              refused={line.trail.filter((t) => t.action.startsWith("posting.")).at(-1)?.action === "posting.refused"}
+            />
+          )}
 
           {history.length > 0 && (
             <section className="panel">
@@ -264,7 +272,7 @@ const POSTING_PILL = {
 } as const;
 
 /** What the gateway did: Fineract's repayment for each loan, split as Fineract applied it, and the ledger entry. */
-function PostingPanel({ posting }: { posting: NonNullable<Line["posting"]> }) {
+function PostingPanel({ posting, refused }: { posting: NonNullable<Line["posting"]>; refused: boolean }) {
   const [pill, label] = POSTING_PILL[posting.status];
   return (
     <section className="panel">
@@ -333,11 +341,18 @@ function PostingPanel({ posting }: { posting: NonNullable<Line["posting"]> }) {
           {posting.status === "posted"
             ? "The key is the repayment's external id in Fineract and the journal entry's reference in the ledger. The entry credits each loan exactly as Fineract split the payment."
             : posting.status === "failed"
-              ? "The gateway stopped and won't try this again on its own. Any Fineract repayment listed above was posted; nothing was written to the ledger."
+              ? refused
+                ? "The gateway refused this approval: the decisions don't support it. It won't try this again on its own, and a retry would be refused the same way."
+                : "The gateway stopped and won't try this again on its own. Any Fineract repayment listed above was posted; nothing was written to the ledger. Once the cause is fixed, send it back; the key keeps it from posting twice."
               : posting.core_transactions.length > 0
                 ? "Fineract has the repayment; the ledger didn't answer. The next attempt finds Fineract's repayment by this key and writes only the ledger entry."
                 : "The posting gateway picks this up within seconds. It looks each write up by this key before making it, so a retry never posts twice."}
         </p>
+        {posting.status === "failed" && (
+          <div className="actions">
+            <RetryPosting outboxId={posting.outbox_id} refused={refused} />
+          </div>
+        )}
       </div>
     </section>
   );

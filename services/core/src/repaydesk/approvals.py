@@ -88,7 +88,7 @@ def judge(staff: Staff, amount_kobo: int, prior: list[Prior]) -> Verdict:
 @dataclass
 class Outcome:
     proposal_id: int
-    status: str  # first_approval, approved, rejected
+    status: str  # first_approval, approved, rejected, retrying
     outbox_id: int | None = None
 
 
@@ -175,6 +175,40 @@ def reject(conn: psycopg.Connection, proposal_id: int, staff: Staff, reason: str
         db.audit(conn, staff.id, "proposal.rejected", f"payment_line:{line_id}",
                  {"proposal_id": pid, "amount_kobo": amount, "reason": reason[:500]}, telemetry.current_trace_id())
     return Outcome(pid, "rejected")
+
+
+# ---- a posting that stopped ------------------------------------------------------------------
+
+
+def retry_posting(conn: psycopg.Connection, outbox_id: int, staff: Staff) -> Outcome:
+    """Send a failed posting back to the gateway, once a person has dealt with what stopped it
+    (a loan reopened in Fineract, an account fixed in the ledger). Nothing about the approval
+    changes: the gateway rechecks it, and the idempotency key keeps anything already posted from
+    posting twice. A posting the gateway refused, because the decisions don't support it, isn't
+    retried: the same decisions would be refused again."""
+    if staff.read_only:
+        raise Refused("read_only", "Auditors can see postings but not retry them.")
+    with conn.transaction():
+        row = conn.execute(
+            "SELECT o.proposal_id, o.line_id, o.status, o.attempts, o.last_error, "
+            "(SELECT a.action FROM audit_log a WHERE a.subject = 'payment_line:' || o.line_id "
+            " AND a.action IN ('posting.failed', 'posting.refused') ORDER BY a.id DESC LIMIT 1) "
+            "FROM posting_outbox o WHERE o.id = %s FOR UPDATE", (outbox_id,),
+        ).fetchone()
+        if not row:
+            raise NotFound(outbox_id)
+        pid, line_id, status, attempts, last_error, stopped_by = row
+        if status != "failed":
+            raise Refused("not_failed", f"This posting is {status}; only a failed posting is retried.")
+        if stopped_by == "posting.refused":
+            raise Refused("refused_by_gateway", "The gateway refused this approval, and would refuse it again. "
+                                                "It needs a new proposal and decision.")
+        conn.execute("UPDATE posting_outbox SET status = 'pending', next_attempt_at = NULL WHERE id = %s",
+                     (outbox_id,))
+        db.audit(conn, staff.id, "posting.retry_requested", f"payment_line:{line_id}",
+                 {"outbox_id": outbox_id, "proposal_id": pid, "attempts": attempts, "last_error": last_error},
+                 telemetry.current_trace_id())
+    return Outcome(pid, "retrying", outbox_id)
 
 
 # ---- reading the queue -----------------------------------------------------------------------

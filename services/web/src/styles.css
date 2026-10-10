@@ -50,6 +50,7 @@ a { color: var(--accent) }
 .nav button:hover { background: var(--sunk) }
 .nav button[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600 }
 .nav .count { font: 500 11.5px var(--font-data); background: var(--sunk); border-radius: 10px; padding: 1px 7px; color: var(--muted) }
+.nav .count.alert { background: var(--bad-soft); color: var(--bad) }
 .nav .later { font-size: 11px; color: var(--muted) }
 .nav-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); padding: 12px 18px 4px }
 .side-foot { margin-top: auto; padding: 12px 16px 0; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line) }

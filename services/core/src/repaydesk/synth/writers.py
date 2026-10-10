@@ -83,27 +83,34 @@ def _opening(book: Book, account: str) -> int:
 
 
 def _northgate(book: Book, lines: list[PaymentLine], folder: Path) -> int:
-    name, number = COLLECTION_ACCOUNTS["bank_csv"]
+    _name, number = COLLECTION_ACCOUNTS["bank_csv"]
     balance = _opening(book, number)
     count = 0
     for day in _days(book):
         todays = sorted((x for x in lines if x.value_date == day), key=lambda x: x.bank_reference)
-        path = folder / f"northgate_{number}_{day:%Y%m%d}.csv"
-        with path.open("w", newline="", encoding="utf-8") as f:
-            f.write(f"Account Name:,{book.bank_name} - Loan Collections\n")
-            f.write(f"Account Number:,{number}\n")
-            f.write(f"Period:,{day:%d-%b-%Y} to {day:%d-%b-%Y}\n\n")
-            w = csv.writer(f)
-            w.writerow(["Trans Date", "Value Date", "Reference", "Narration", "Debit", "Credit", "Balance"])
-            for x in todays:
-                debit = x.line_id.startswith("DR-")
-                balance += -x.amount if debit else x.amount
-                w.writerow([
-                    f"{day:%d-%b-%Y}", f"{day:%d-%b-%Y}", x.bank_reference, x.narration,
-                    _money(x.amount) if debit else "", "" if debit else _money(x.amount), _money(balance),
-                ])
-                count += 0 if debit else 1
+        rows = [(x.bank_reference, x.narration, x.amount if x.line_id.startswith("DR-") else 0,
+                 0 if x.line_id.startswith("DR-") else x.amount) for x in todays]
+        balance = write_northgate_day(folder / f"northgate_{number}_{day:%Y%m%d}.csv", book.bank_name, number, day,
+                                      rows, balance)
+        count += sum(1 for r in rows if r[3])
     return count
+
+
+def write_northgate_day(path: Path, bank_name: str, number: str, day: date,
+                        rows: list[tuple[str, str, int, int]], balance: int) -> int:
+    """One day of Northgate Bank's CSV statement: (reference, narration, debit, credit) per row, in
+    kobo. Returns the closing balance."""
+    with path.open("w", newline="", encoding="utf-8") as f:
+        f.write(f"Account Name:,{bank_name} - Loan Collections\n")
+        f.write(f"Account Number:,{number}\n")
+        f.write(f"Period:,{day:%d-%b-%Y} to {day:%d-%b-%Y}\n\n")
+        w = csv.writer(f)
+        w.writerow(["Trans Date", "Value Date", "Reference", "Narration", "Debit", "Credit", "Balance"])
+        for reference, narration, debit, credit in rows:
+            balance += credit - debit
+            w.writerow([f"{day:%d-%b-%Y}", f"{day:%d-%b-%Y}", reference, narration,
+                        _money(debit) if debit else "", _money(credit) if credit else "", _money(balance)])
+    return balance
 
 
 def _coastline(book: Book, lines: list[PaymentLine], folder: Path) -> int:

@@ -163,7 +163,8 @@ Me = Annotated[staff.Staff, Depends(signed_in)]
 
 
 def _refused(e: approvals.Refused) -> JSONResponse:
-    status = 409 if e.code == "not_pending" else 422 if e.code in ("reason_required", "bad_split") else 403
+    conflict = e.code in ("not_pending", "not_failed", "refused_by_gateway")
+    status = 409 if conflict else 422 if e.code in ("reason_required", "bad_split") else 403
     return JSONResponse({"refused": e.code, "message": e.message}, status_code=status)
 
 
@@ -224,6 +225,18 @@ def reject(proposal_id: int, body: Rejection, who: Me):
     return {"proposal_id": out.proposal_id, "status": out.status}
 
 
+@app.post("/postings/{outbox_id}/retry")
+def retry_posting(outbox_id: int, who: Me):
+    with app.state.pool.connection() as conn:
+        try:
+            out = approvals.retry_posting(conn, outbox_id, who)
+        except approvals.NotFound:
+            raise HTTPException(404, "No such posting.") from None
+        except approvals.Refused as e:
+            return _refused(e)
+    return {"outbox_id": out.outbox_id, "status": out.status}
+
+
 # ---- reads for the web app -------------------------------------------------------------------
 
 
@@ -245,6 +258,12 @@ def config() -> dict:
 def summary(who: Me) -> dict:
     with app.state.pool.connection() as conn:
         return views.summary(conn)
+
+
+@app.get("/today")
+def today(who: Me) -> dict:
+    with app.state.pool.connection() as conn:
+        return views.today(conn, approvals.TWO_PERSON_ABOVE_KOBO)
 
 
 @app.get("/lines")

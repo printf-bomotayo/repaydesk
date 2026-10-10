@@ -12,13 +12,15 @@ interface Area {
   /** Not built yet: says when it arrives. */
   later?: string;
   count?: (s: Summary) => number;
+  /** The count is trouble: shown only when there is some, and in the warning colour. */
+  alert?: boolean;
 }
 
 export const AREAS: { label: string; areas: Area[] }[] = [
   {
     label: "Work",
     areas: [
-      { to: "/today", label: "Today", later: "chunk 9" },
+      { to: "/today", label: "Today", count: (s) => s.failed_postings, alert: true },
       { to: "/review", label: "Review queue", count: (s) => s.pending_proposals },
       { to: "/payments", label: "Payments", count: (s) => Object.values(s.lines).reduce((a, b) => a + b, 0) - s.lines.duplicate },
     ],
@@ -46,6 +48,13 @@ export const AREAS: { label: string; areas: Area[] }[] = [
     ],
   },
 ];
+
+/** The number beside an area, or null for none: an alert count shows only when there is trouble. */
+function count(a: Area, summary: Summary | null): number | null {
+  const n = a.count && summary ? a.count(summary) : undefined;
+  if (typeof n !== "number" || Number.isNaN(n) || (a.alert && n === 0)) return null;
+  return n;
+}
 
 const ROLE: Record<string, string> = { officer: "Officer", supervisor: "Supervisor", auditor: "Auditor, read only" };
 
@@ -88,8 +97,10 @@ export function Shell() {
               {group.areas.map((a) => (
                 <NavLink key={a.to} to={a.to}>
                   <span>{a.label}</span>
-                  {a.count && summary ? (
-                    <span className="count">{a.count(summary).toLocaleString()}</span>
+                  {count(a, summary) !== null ? (
+                    <span className={a.alert ? "count alert" : "count"} title={a.alert ? "Postings that stopped" : undefined}>
+                      {count(a, summary)!.toLocaleString()}
+                    </span>
                   ) : a.later ? (
                     <span className="later">{a.later}</span>
                   ) : null}

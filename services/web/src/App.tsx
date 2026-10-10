@@ -10,9 +10,10 @@ import { LineDetail } from "./pages/LineDetail";
 import { LoanDetail, Loans } from "./pages/Loans";
 import { Payments } from "./pages/Payments";
 import { SignIn } from "./pages/SignIn";
+import { Today } from "./pages/Today";
 import { SessionProvider, useSession } from "./session";
 
-const LATER = ["/today", "/runs", "/collections", "/measures"];
+const LATER = ["/runs", "/collections", "/measures"];
 
 function Routed() {
   const { staff, checking } = useSession();
@@ -21,7 +22,8 @@ function Routed() {
   return (
     <Routes>
       <Route element={<Shell />}>
-        <Route index element={<Navigate to="/payments" replace />} />
+        <Route index element={<Navigate to="/today" replace />} />
+        <Route path="/today" element={<Today />} />
         <Route path="/payments" element={<Payments />} />
         <Route path="/payments/:id" element={<LineDetail />} />
         <Route path="/review" element={<Review />} />
@@ -34,7 +36,7 @@ function Routed() {
         {LATER.map((p) => (
           <Route key={p} path={p} element={<Later />} />
         ))}
-        <Route path="*" element={<Navigate to="/payments" replace />} />
+        <Route path="*" element={<Navigate to="/today" replace />} />
       </Route>
     </Routes>
   );

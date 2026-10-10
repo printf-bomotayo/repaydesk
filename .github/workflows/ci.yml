@@ -122,31 +122,17 @@ jobs:
           # The seed copied the book into the directory, and a loan's page reads Fineract live.
           ref=$(curl -fsS "http://127.0.0.1:18082/api/loans?limit=1" -H "Authorization: Bearer $token" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["total"] > 0, d; print(d["items"][0]["ref"])')
           curl -fsS "http://127.0.0.1:18082/api/loans/$ref" -H "Authorization: Bearer $token" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["live"] and d["schedule"], d; print(d["ref"], "read live")'
-      - name: an approved match is posted to Fineract and the ledger by the gateway
+      - name: "milestone 2 end to end: a new statement is ingested, matched, approved by two people, posted, and found in Fineract and Odoo"
+        run: python scripts/dev.py demo
+      - name: Today shows the demo's postings, and nothing stuck
         run: |
           password=$(grep '^STAFF_DEMO_PASSWORD=' .env | cut -d= -f2-)
-          token=$(curl -fsS -X POST http://127.0.0.1:18000/auth/sign-in -H 'Content-Type: application/json' \
-            -d "{\"staff_id\":\"tunde\",\"password\":\"$password\"}" | python -c 'import json,sys; print(json.load(sys.stdin)["token"])')
-          # A match Tunde can settle alone.
-          read pid line <<< "$(curl -fsS 'http://127.0.0.1:18000/queue?limit=200' -H "Authorization: Bearer $token" | python -c '
+          token=$(curl -fsS -X POST http://127.0.0.1:18082/api/auth/sign-in -H 'Content-Type: application/json'             -d "{\"staff_id\":\"hadiza\",\"password\":\"$password\"}" | python -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          curl -fsS http://127.0.0.1:18082/api/today -H "Authorization: Bearer $token" | python -c '
           import json, sys
-          item = next(i for i in json.load(sys.stdin)["items"] if i["kind"] == "match" and i["you"]["settles"])
-          print(item["proposal_id"], item["line"]["id"])')"
-          curl -fsS -X POST "http://127.0.0.1:18000/proposals/$pid/approve" -H "Authorization: Bearer $token"
-          line=$(python -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$line")
-          for i in $(seq 1 30); do
-            status=$(curl -fsS "http://127.0.0.1:18000/lines/$line" -H "Authorization: Bearer $token" | python -c 'import json,sys; p=json.load(sys.stdin)["posting"]; print(p["status"], p["ledger_entry"], p["last_error"])')
-            echo "$status"
-            case "$status" in posted*) break;; failed*) exit 1;; esac
-            sleep 2
-          done
-          case "$status" in posted*) ;; *) docker compose logs gateway; exit 1;; esac
-          # Fineract has the repayment under the key (read with the admin login, not the gateway's).
-          read loan key <<< "$(curl -fsS "http://127.0.0.1:18000/lines/$line" -H "Authorization: Bearer $token" \
-            | python -c 'import json,sys; t=json.load(sys.stdin)["posting"]["core_transactions"][0]; print(t["loan_ref"], t["external_id"])')"
-          curl -fsS -u mifos:password -H 'Fineract-Platform-TenantId: default' \
-            "http://127.0.0.1:18080/fineract-provider/api/v1/loans/external-id/$loan/transactions/external-id/$key" \
-            | python -c 'import json,sys; t=json.load(sys.stdin); print("Fineract has", t["externalId"], t["amount"])'
+          p = json.load(sys.stdin)["postings"]
+          assert p["posted_today"] >= 4 and p["failed"] == 0 and p["stopped"] == [], p
+          print(p["posted_today"], "posted today, none stopped")'
       - run: pip install -e "services/core[dev]"
       - name: contract tests against Fineract and Odoo
         working-directory: services/core

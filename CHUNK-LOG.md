@@ -1192,3 +1192,139 @@ What it does not prove:
 visible in Fineract and Odoo.
 
 ---
+
+## Chunk 9 — Today, and milestone 2 end to end ✅
+
+_Date: 2026-10-10_
+
+**What & why.** _Metaphor: the morning board in a back office._ Before anyone opens a file, the
+team lead looks at the board by the door: what came in overnight, what's waiting for a signature,
+what's been sitting unclaimed and for how long, and anything the ledger room sent back. A voucher
+sent back is pinned there with the clerk's note, until someone fixes what's wrong and puts it
+back in the tray.
+
+Until now, staff landed on the list of payments, and a posting the books refused was visible only
+if someone happened to open that payment. This chunk adds the board, and runs the whole milestone
+as one story:
+
+- **Today** (`/today`, now where sign-in lands), as in the approved mockup:
+  - the latest statement week: money received, the share matched by rule, where the week's lines
+    are, each channel;
+  - the review queue's size, and how many payments need two people;
+  - money no rule could place, by age;
+  - the postings: posted today, on the way, retrying, and stopped, with Fineract's or Odoo's
+    reason. The navigation shows a red count while any posting has stopped.
+- **Retry posting.** Once a person has fixed what stopped a posting (a loan reopened in Fineract,
+  an account fixed in the ledger), they send it back from Today or from the payment's case file.
+  The row goes back to pending, Postgres wakes the gateway, and the trail records who did it.
+- **The demo** (`python scripts/dev.py demo`): a new Northgate Bank statement for today, with
+  four repayments quoting live loans (one over ₦500,000), a reversal and a transfer naming nobody.
+  It is ingested and matched by the everyday code. Amaka and Tunde approve through the API. When
+  the gateway has posted, the demo asks Fineract and Odoo themselves for each repayment and entry.
+  `--for-review` stops after matching, so a presenter approves on camera. CI runs it on main.
+- **`docs/demo.md`**: the same story to click through, for showing someone.
+
+**Decisions worth recording.**
+
+*The week is the data's, not the calendar's.* Today's week is the seven value dates ending on the
+latest line held. Statements arrive a day or more late, and a quiet morning shouldn't read as an
+empty week. The queues (review, unmatched money, stopped postings) count everything, whenever it
+arrived: work doesn't expire at the end of a week.
+
+*Unmatched money is aged from its value date*, the day it reached the bank, not the day Repaydesk
+saw it. That is the age a bank's suspense policy uses, and it doesn't reset if a file is loaded late.
+
+*Retry changes nothing about the approval.* It only puts the row back in the tray. The gateway
+rechecks the decisions and looks each write up by key, so a retry can't post twice or post what
+wasn't approved. A posting the gateway *refused* (the decisions don't support it) has no retry:
+the same decisions would be refused again, and it needs a new proposal. Auditors can't retry.
+
+*The demo goes through the front door.* It approves over HTTP as the web app does, and checks the
+books with the read-only login and Odoo's own search, not Repaydesk's database. If the gateway
+marked something posted that isn't in a book, the demo fails.
+
+**Principles.** _Same morning-board metaphor._ *Put trouble where people look first*: a stopped
+posting is on the landing page, not three clicks deep. *A note with every returned voucher*: the
+book's own reason, verbatim. *Fix the cause, then put it back*: retry is a person's decision
+after a fix, never a loop. *Show it the way it's used*: the demo is the milestone, run against the
+real systems, and CI runs it.
+
+**Files.**
+
+- New: `src/repaydesk/demo.py`; `web/src/pages/Today.tsx`, `components/RetryPosting.tsx`;
+  `docs/demo.md`.
+- Changed:
+  - `approvals.py` (`retry_posting`), `api.py` (`GET /today`, `POST /postings/{id}/retry`),
+    `views.py` (`today`; the summary counts stopped postings), `synth/writers.py` (one day of a
+    Northgate statement, for the demo; the week's files are byte for byte the same);
+  - `tests/test_approvals.py` (two tests);
+  - `web/src/api.ts`, `App.tsx` (Today is the landing page), `components/Shell.tsx` (the red count),
+    `pages/LineDetail.tsx` (retry on the case file), `pages/Later.tsx`, `styles.css`,
+    `App.test.tsx`;
+  - `compose.yaml` (the `demo` tool), `scripts/dev.py` and `Makefile` (`demo`),
+    `.github/workflows/ci.yml` (the demo replaces the single posted match; Today shows nothing stuck),
+    `README.md`.
+
+**Depends on / blocks.** Depends on chunks 2 to 8. Completes milestone 2 (tag `m2`). Blocks
+milestone 3: the investigator agent takes the unmatched lines Today ages, and its runs take the
+panel Today keeps for them.
+
+**Verification.** `ruff` clean. `pytest`: 103 passed, two new, against Postgres:
+
+- a failed posting sent back by a person: the auditor is refused, a refused posting and a pending
+  one can't be retried, a missing one is 404; the retry wakes the gateway (`NOTIFY` seen), keeps
+  the attempts and the last error on the row, and is in the audit log;
+- Today counts the week (received, by status, by rule, by channel), the queue (and those needing
+  two people), unmatched money by age, and postings on the way.
+
+Contract tests against Fineract and Odoo: 9 passed. `vitest`: 27 passed, two new, and one extended:
+landing on Today with a stopped, a refused and a retrying posting, with Retry calling the API and
+reloading; an auditor sees no Retry; Retry on a failed case file. `tsc` clean; the production build
+succeeds. The gateway is unchanged.
+
+On the running stack:
+
+- **The demo**: a statement of six lines, ingested; rules proposed four repayments and the reversal,
+  and left the nameless transfer. Amaka approved three; the ₦968,000 payment and the ₦2.5m reversal
+  took her first approval and Tunde's second. The gateway posted RD-P219 to RD-P222, and the demo
+  found each in Fineract (transactions 10156 to 10159) and in Odoo (RPY/2026/10/0010 to 0013).
+  `--for-review` stopped after matching, leaving the proposals in the queue.
+- **A stopped posting, handled.** With the gateway stopped, Tunde approved a ₦363,000 payment; its
+  loan was then written off in Fineract. Started again, the gateway failed it: "Fineract 400: Loan
+  must be Active, Fully Paid or Overpaid". `/today` listed it with that reason and the navigation
+  count was 1. After undoing the write-off, Hadiza's retry was refused (403); Amaka's put it back,
+  and the gateway posted it about a second later (ledger entry RPY/2026/10/0014). Fineract holds
+  one repayment under RD-P44. The trail: approved, handed over, failed, sent back by amaka, posted.
+- **The writer refactor**: the week's Northgate files, regenerated with the seed's date, are
+  identical to the ones on disk.
+
+What it does not prove:
+
+- **The Today page in a browser on the live stack.** I checked its data through the web app's own
+  `/api` and its rendering in the component tests, but didn't sign in to the browser for it: that
+  needs the demo password, which stays in `.env`.
+- **A posting stopped by Odoo.** Only Fineract's refusal was drilled; Odoo's goes the same way
+  through the gateway's error handling (chunk 8's tests).
+- **The week window over time.** Run on 10 October, the seeded week (1 to 7 October) shows as 4 to
+  10 October, because the demo's statement is dated today; the earlier three days are still in
+  Payments.
+- **Phone width** for Today; the mockup's layout rules are used, but not checked on a phone.
+
+**PR package.**
+
+- Subject: `Chunk 9: Today, retry for a stopped posting, and milestone 2 end to end`
+- Description:
+  > Adds Today, the page staff land on: the latest statement week, the review queue, unmatched
+  > money by age, and postings (posted today, on the way, retrying, stopped with the books'
+  > reason). A person sends a stopped posting back with Retry posting once the cause is fixed; the
+  > gateway rechecks the approval and the idempotency key prevents a double post. Postings the
+  > gateway refused, and auditors, can't retry.
+  >
+  > `python scripts/dev.py demo` runs milestone 2 against the stack: a new statement is ingested,
+  > matched, approved through the API (two people where needed), posted, and found in Fineract and
+  > Odoo. CI runs it on main. `docs/demo.md` is the click-through version.
+
+**Plan.** Milestone 2, rules, approvals and gateway: the end-to-end demo, and the Today screen.
+Milestone 2 is complete.
+
+---
