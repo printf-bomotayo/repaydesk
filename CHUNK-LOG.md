@@ -1328,3 +1328,46 @@ What it does not prove:
 Milestone 2 is complete.
 
 ---
+
+## Chunk 9a — Graphite colours ✅
+
+_Date: 2026-10-10_
+
+**What & why.** _Metaphor: a ledger printed in black, with only the stamps in colour._ The web
+app moves from the mockup's ledger green to Graphite: near-black ink on warm grey, and no brand
+colour at all. The only colour left on screen is status: posted (green), awaiting review (blue),
+retrying (amber), stopped (red). The page's job is to show what needs a person, so that is what
+the eye finds first. Chosen by the user from three proposals
+([colour options](https://claude.ai/artifact/MQ4Td3CSy5HFzHaA9Gd89Q)).
+
+**Decisions worth recording.** Links share the text's colour now, so they are underlined (a muted
+underline that darkens on hover); navigation and button-styled links keep none. Status colours are
+unchanged from the mockup. Primary buttons are near-black in light mode and near-white in dark.
+
+**Principles.** _Same ledger metaphor._ *Colour means something*: when only status is coloured,
+colour always says "look here". *Every colour is a token*: the change is one block of CSS.
+
+**Files.** `services/web/src/styles.css` (theme tokens, link underline).
+
+**Depends on / blocks.** Depends on chunk 5's token system. Blocks nothing.
+
+**Verification.** Every text pairing passes WCAG AA in both themes (text on background 16.2:1,
+muted text on panels 6.3:1, button text on buttons 14.7:1 light and 15.3:1 dark). `tsc` clean,
+`vitest` 27 passed. The rebuilt `web` container serves it; the sign-in page shows Graphite in dark
+mode in Chrome.
+
+What it does not prove: the signed-in screens in a browser (the demo password stays in `.env`), and
+light mode on the live stack. The approved mockup keeps its green; it is a record of what was
+approved, not the app.
+
+**PR package.**
+
+- Subject: `Chunk 9a: Graphite colours for the web app`
+- Description:
+  > Replaces the ledger-green theme with Graphite: near-black on warm grey, no brand colour, so
+  > status is the only colour on screen. Links are underlined since they share the text colour.
+  > One block of tokens in styles.css; WCAG AA in light and dark.
+
+**Plan.** Milestone 2 follow-up, chosen by the user after `m2`.
+
+---
