@@ -2,7 +2,6 @@ import { useLocation } from "react-router";
 import { AREAS } from "../components/Shell";
 
 const WHAT: Record<string, string> = {
-  "/runs": "Each investigation by the agent: the tools it called, what they returned, and what it proposed.",
   "/collections": "Arrears by bucket, drafted messages for approval, promises to pay.",
   "/measures": "Time per 100 lines against the baseline, auto-match rate, suspense age, cost per line.",
 };

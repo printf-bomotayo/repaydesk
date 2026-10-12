@@ -29,6 +29,7 @@ import json
 import os
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -151,6 +152,7 @@ class Run:
     steps: list[dict] = field(default_factory=list)
     usage: dict[str, dict[str, int]] = field(default_factory=dict)
     error: str | None = None
+    started: datetime = field(default_factory=lambda: datetime.now(UTC))  # when it began, not when it was saved
 
     def add_usage(self, model: str, usage: Any) -> None:
         u = self.usage.setdefault(model, {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0})
@@ -325,10 +327,10 @@ def record(conn: psycopg.Connection, run: Run, line_amount: int, core: CoreBanki
         if action == "superseded":
             outcome = None
         run_id = conn.execute(
-            "INSERT INTO agent_runs (line_id, agent, finished_at, model, classifier_model, classification, outcome, "
-            "confidence, verdict, checks, proposal_id, steps, usage, cost_usd, error, trace_id) "
-            "VALUES (%s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (run.line_id, AGENT, INVESTIGATOR_MODEL, CLASSIFIER_MODEL,
+            "INSERT INTO agent_runs (line_id, agent, started_at, finished_at, model, classifier_model, classification, "
+            "outcome, confidence, verdict, checks, proposal_id, steps, usage, cost_usd, error, trace_id) "
+            "VALUES (%s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (run.line_id, AGENT, run.started, INVESTIGATOR_MODEL, CLASSIFIER_MODEL,
              Jsonb(run.triage.model_dump()) if run.triage else None, outcome,
              round(min(max(v.confidence, 0), 1), 3) if v else None, Jsonb(v.model_dump()) if v else None,
              Jsonb(checks), proposal_id, Jsonb(run.steps), Jsonb(run.usage), run.cost_usd(), run.error, trace_id),

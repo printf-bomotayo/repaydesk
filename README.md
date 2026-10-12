@@ -7,7 +7,7 @@ approve everything that moves money or reaches a customer.
 It runs on open-source finance systems: **Apache Fineract** as core banking and **Odoo
 Community** as the ledger. Every borrower, loan and payment in it is synthetic.
 
-> Status: milestones 1 and 2 of 6 done (tags `m1`, `m2`); milestone 3 in progress. Built in chunks, each verified and logged in
+> Status: milestones 1 to 3 of 6 done (tags `m1`, `m2`, `m3`); milestone 4, collections, next. Built in chunks, each verified and logged in
 > [`CHUNK-LOG.md`](CHUNK-LOG.md). See [the roadmap](#roadmap).
 
 ## The problem
@@ -174,6 +174,10 @@ Built so far (milestone 1):
   [refresh mockup](https://claude.ai/artifact/LZv2d9Q8N8DVwHT1z6x46B). White canvas and near-black
   ink, a top bar, and colour that always means the same thing: navy for the week's numbers, coral
   for "needs a person", forest for done, cream for the investigator's words.
+- **Agent runs** (chunk 13): every investigation as a page of its own: the triage, each lookup and
+  what came back, the answer with its findings for and against, Repaydesk's checks, the cost, and
+  what people have decided about its proposal since. Linked from Today's note, from the review
+  card ("How it decided") and from the payment's case file.
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract
@@ -187,7 +191,7 @@ Decisions are recorded in [`docs/adr/`](docs/adr/).
 |---|---|---|
 | 1. Foundations and data ✅ | Compose stack, adapters and contract tests, synthetic generator, CI | `make up` seeds 2,000 borrowers and a week of payments; one trace in Jaeger |
 | 2. Rules, approvals, gateway ✅ | Ingestion, rule matching, approval queue with role limits, .NET posting gateway, audit | Rule matches approved and visible in Fineract and Odoo |
-| 3. Investigator agent, MCP, evals | Read-only MCP servers, investigator on the Claude Agent SDK, eval set | The agent places "MAMA CHIKA PROVISIONS" with its evidence |
+| 3. Investigator agent, MCP, evals ✅ | Read-only MCP servers, investigator on the Claude Agent SDK, eval set | The agent places "MAMA CHIKA PROVISIONS" with its evidence |
 | 4. Collections | Arrears buckets, drafting agent under a written policy, SMS/WhatsApp simulators | A portfolio manager approves a morning's drafts |
 | 5. Reporting and measurement | Daily close pack, reporting MCP server, baseline | Before-and-after numbers |
 | 6. Hosted demo | One small VM behind HTTPS, demo logins, video | A link |

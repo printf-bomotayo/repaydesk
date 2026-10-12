@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, ApiError, type QueueItem, type QueueView } from "../api";
 import { Checks } from "../components/Checks";
+import { RunLink } from "./Runs";
 import { LoanLink } from "../components/records";
 import { announceChange, Failed, Loading, Pager, useLoad, useToast } from "../components/common";
 import { actorLabel, CHANNEL_LABEL, day, naira } from "../format";
@@ -159,6 +160,7 @@ function Proposal({ item, readOnly, onDecided }: { item: QueueItem; readOnly: bo
           {actorLabel(item.proposed_by)}
           {item.confidence < 1 ? ` · confidence ${Math.round(item.confidence * 100)}%` : " · certain"}
         </span>
+        <RunLink evidence={item.evidence} />
         {item.kind === "exclude" ? (
           <b>Exclude: not a repayment</b>
         ) : (

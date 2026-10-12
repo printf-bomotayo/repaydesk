@@ -323,3 +323,68 @@ def today(conn: psycopg.Connection, two_person_above_kobo: int) -> dict:
             } for r in stopped],
         },
     }
+
+
+# ---- the investigator's runs (ADR 0009) -------------------------------------------------------
+
+RUN_OUTCOMES = ("proposed", "excluded", "suspense", "failed")
+
+_RUN_DECISION = """
+LEFT JOIN proposals p ON p.id = r.proposal_id
+"""
+
+
+def runs(conn: psycopg.Connection, outcome: str | None = None, limit: int = 50, offset: int = 0) -> dict:
+    """Newest first: what each run looked at, what it concluded, and where its proposal stands now."""
+    where, args = ("WHERE r.outcome = %(outcome)s", {"outcome": outcome}) if outcome else ("", {})
+    rows = conn.execute(
+        f"SELECT r.id, r.started_at, r.line_id, l.amount_kobo, l.narration, l.channel, r.outcome, r.confidence, "
+        f"r.verdict->>'reason', jsonb_array_length(r.steps), r.cost_usd, r.model, p.status, r.error, "
+        f"count(*) OVER () FROM agent_runs r JOIN payment_lines l ON l.id = r.line_id {_RUN_DECISION} {where} "
+        f"ORDER BY r.id DESC LIMIT %(limit)s OFFSET %(offset)s", args | {"limit": limit, "offset": offset},
+    ).fetchall()
+    counts = dict(conn.execute("SELECT coalesce(outcome, 'superseded'), count(*) FROM agent_runs GROUP BY 1"))
+    totals = conn.execute("SELECT count(*), coalesce(sum(cost_usd), 0) FROM agent_runs").fetchone()
+    return {
+        "items": [{"id": r[0], "started_at": _iso(r[1]), "line_id": r[2], "amount_kobo": r[3], "narration": r[4],
+                   "channel": r[5], "outcome": r[6], "confidence": float(r[7]) if r[7] is not None else None,
+                   "reason": r[8], "tool_calls": r[9], "cost_usd": float(r[10] or 0), "model": r[11],
+                   "proposal_status": r[12], "error": r[13]} for r in rows],
+        "total": rows[0][14] if rows else 0,
+        "counts": {o: counts.get(o, 0) for o in RUN_OUTCOMES},
+        "all_runs": totals[0], "cost_usd": round(float(totals[1]), 4),
+        "limit": limit, "offset": offset,
+    }
+
+
+def run(conn: psycopg.Connection, run_id: int) -> dict | None:
+    """One run whole: the payment, the triage, each lookup and what came back, the answer, Repaydesk's
+    checks on it, the cost, and what people have decided about the proposal since."""
+    r = conn.execute(
+        "SELECT r.id, r.started_at, r.finished_at, r.line_id, r.agent, r.model, r.classifier_model, r.classification, "
+        "r.outcome, r.confidence, r.verdict, r.checks, r.proposal_id, r.steps, r.usage, r.cost_usd, r.error, "
+        "r.trace_id, l.amount_kobo, l.narration, l.channel, l.value_date, l.payer_name, l.status "
+        "FROM agent_runs r JOIN payment_lines l ON l.id = r.line_id WHERE r.id = %s", (run_id,),
+    ).fetchone()
+    if not r:
+        return None
+    proposal = None
+    if r[12]:
+        status = conn.execute("SELECT status FROM proposals WHERE id = %s", (r[12],)).fetchone()[0]
+        decisions = conn.execute(
+            "SELECT d.staff_id, s.name, d.decision, d.reason, d.at FROM decisions d JOIN staff s ON s.id = d.staff_id "
+            "WHERE d.proposal_id = %s ORDER BY d.at", (r[12],)).fetchall()
+        proposal = {"id": r[12], "status": status,
+                    "decisions": [{"staff_id": d[0], "name": d[1], "decision": d[2], "reason": d[3], "at": _iso(d[4])}
+                                  for d in decisions]}
+    started, finished = r[1], r[2]
+    return {
+        "id": r[0], "started_at": _iso(started), "finished_at": _iso(finished),
+        "seconds": round((finished - started).total_seconds(), 1) if finished else None,
+        "agent": r[4], "model": r[5], "classifier_model": r[6], "triage": r[7], "outcome": r[8],
+        "confidence": float(r[9]) if r[9] is not None else None, "verdict": r[10], "checks": r[11] or [],
+        "proposal": proposal, "steps": r[13] or [], "usage": r[14] or {}, "cost_usd": float(r[15] or 0),
+        "error": r[16], "trace_id": r[17],
+        "line": {"id": r[3], "amount_kobo": r[18], "narration": r[19], "channel": r[20], "value_date": _iso(r[21]),
+                 "payer_name": r[22], "status": r[23]},
+    }

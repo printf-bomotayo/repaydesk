@@ -32,7 +32,7 @@ export const AREAS: { label: string; areas: Area[] }[] = [
     areas: [
       { to: "/borrowers", label: "Borrowers" },
       { to: "/loans", label: "Loans" },
-      { to: "/runs", label: "Agent runs", later: "milestone 3" },
+      { to: "/runs", label: "Agent runs" },
     ],
   },
   {

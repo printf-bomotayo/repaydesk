@@ -1940,3 +1940,103 @@ What it does not prove:
 **Plan.** Milestone 3 follow-up, chosen by the user: the UI refresh before the Agent runs screen.
 
 ---
+
+## Chunk 13 — Agent runs ✅
+
+_Date: 2026-10-12_
+
+**What & why.** _Metaphor: the investigator's working file._ When a senior officer's note lands in
+the supervisor's tray, a good supervisor can ask for the working file:
+- what the officer pulled from the records room, and what each file said;
+- what they concluded, and why;
+- what the checking clerk verified before it went further.
+
+The note is short; the file is complete.
+
+Chunk 11 recorded every run, but nobody could see one without a database. This chunk adds the file:
+
+- **Agent runs** (`/runs`): every investigation, newest first, with its payment, outcome,
+  confidence, lookups, cost, and where its proposal stands now (pending, approved or rejected).
+  Filters by outcome, and a running total of runs and cost.
+- **A run** (`/runs/:id`), as drawn in the refresh mockup:
+  - **Summary:** a navy card with the outcome, confidence, lookups, cost and checks passed.
+  - **The lookups:** the triage, then each lookup with its arguments and, a click away, exactly
+    what came back.
+  - **The answer:** on cream, with each finding marked ✓, ✕ or –, and the candidates considered.
+  - **The checks:** Repaydesk's own, passed or failed.
+  - **The outcome:** the payment, and what people have decided about the proposal since.
+
+  A failed run shows its error in coral.
+- **Links in:**
+  - Today's latest note: "See how it decided".
+  - Every review card for an investigator's proposal: "How it decided (run N)".
+  - The proposal on a payment's case file.
+  - The investigator's tile on Today: "All runs".
+- **The API:** `GET /runs` (paged, filterable) and `GET /runs/{id}`.
+
+**Found on the way.** *A run's start time was its save time.* `agent_runs.started_at` defaulted to
+the moment of the insert, which `record()` makes after the investigation, so every run took "0
+seconds". The investigator now notes when a run began and saves that. The page shows a duration
+only when there is one, because runs saved before the fix have none.
+
+**Decisions worth recording.** *The working file is for everyone who can read the queue,* auditors
+included: it shows what the agent saw and why it concluded, which is what an auditor needs. *The
+lookups' answers are shown as they came back,* masked as the agent saw them (ADR 0008), behind a
+click so the page reads as a story first.
+
+**Principles.** _Same working-file metaphor._ *Show your working, all of it.* *The note first,
+the file a click away.* *Close the loop*: a run says what people did with its proposal.
+
+**Files.**
+
+- New: `web/src/pages/Runs.tsx`, `Runs.test.tsx`.
+- Changed:
+  - `views.py` (`runs`, `run`), `api.py` (`GET /runs`, `GET /runs/{id}`);
+  - `investigator.py` (a run's real start);
+  - `tests/test_approvals.py` (one test), `tests/test_investigator.py`;
+  - `web/src/api.ts`, `App.tsx` (the routes), `components/Shell.tsx`, `pages/Later.tsx`;
+  - `pages/Today.tsx`, `Review.tsx`, `LineDetail.tsx` (the links);
+  - `README.md` (milestone 3 done).
+
+**Depends on / blocks.** Depends on chunks 11 and 12a. Completes milestone 3 (tag `m3`). Blocks
+milestone 4, collections, only in that its drafting agent's runs will appear here too.
+
+**Verification.** `ruff` clean.
+
+- `pytest`: 123 passed, one new. Two runs recorded (a match and a suspense) read back through the
+  API, newest first, with counts and an outcome filter (an unknown outcome is refused). One run
+  reads back whole: the triage, its lookup, the answer, the checks and its pending proposal. After
+  Tunde approves the proposal, the run shows his approval. A missing run is 404, and no token is
+  401.
+- `vitest`: 30 passed, two new. The list shows runs newest first and filters by outcome. A run
+  shows its lookups, triage, findings, checks ("2 of 2"), Tunde's approval and no review button
+  once decided, and the lookup's answer opens a click away.
+- `tsc` clean.
+
+On the running stack (signed in by the user), read as text because Chrome's window wasn't
+visible for screenshots:
+- `/runs` lists the 15 live runs, all proposed, $0.37 in all.
+- `/runs/1` reads as designed: Ifeoma Pharmacy, the two lookups, the answer and its four findings,
+  five of five checks, proposal 229 pending, tokens per model.
+- No console errors.
+
+What it does not prove:
+
+- **The run pages in a screenshot.** The text and the tests were checked, but not the pixels; the
+  layout follows the mockup's, in the same stylesheet.
+- **A suspense or failed run live.** None exists on the stack. Both are covered by the tests.
+
+**PR package.**
+
+- Subject: `Chunk 13: Agent runs: every investigation, whole, and links to it`
+- Description:
+  > Adds the Agent runs screens: a list of every investigation (outcome, confidence, lookups,
+  > cost, and where its proposal stands now) and a page per run showing the triage, each lookup and
+  > what came back, the answer with its findings, Repaydesk's checks, and what people decided.
+  > Linked from Today, the review queue and the case file. Also records a run's real start time
+  > (it was the save time). Completes milestone 3.
+
+**Plan.** Milestone 3, investigator agent, MCP and evals: the agent runs screen. Milestone 3 is
+complete.
+
+---

@@ -9,11 +9,12 @@ import { Later } from "./pages/Later";
 import { LineDetail } from "./pages/LineDetail";
 import { LoanDetail, Loans } from "./pages/Loans";
 import { Payments } from "./pages/Payments";
+import { RunPage, Runs } from "./pages/Runs";
 import { SignIn } from "./pages/SignIn";
 import { Today } from "./pages/Today";
 import { SessionProvider, useSession } from "./session";
 
-const LATER = ["/runs", "/collections", "/measures"];
+const LATER = ["/collections", "/measures"];
 
 function Routed() {
   const { staff, checking } = useSession();
@@ -32,6 +33,8 @@ function Routed() {
         <Route path="/loans" element={<Loans />} />
         <Route path="/loans/:ref" element={<LoanDetail />} />
         <Route path="/ingestion" element={<Ingestion />} />
+        <Route path="/runs" element={<Runs />} />
+        <Route path="/runs/:id" element={<RunPage />} />
         <Route path="/audit" element={<Audit />} />
         {LATER.map((p) => (
           <Route key={p} path={p} element={<Later />} />

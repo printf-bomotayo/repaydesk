@@ -3,6 +3,7 @@ and one whole investigation against a scripted model, through the real tool runn
 server. No network and no API key: the model's replies come from a stub transport."""
 
 import json
+from datetime import UTC, datetime
 
 import anyio
 import httpx2
@@ -75,6 +76,8 @@ def test_a_match_becomes_a_proposal_for_people_never_a_posting(placed_week, conn
                      (out["run_id"],)).fetchone()
     assert r[0] == "proposed" and r[1][0]["tool"] == "get_loan" and float(r[2]) == 0.003  # 1000 in, 100 out
     assert r[3] == "names_a_business"
+    took = conn.execute("SELECT finished_at - started_at FROM agent_runs WHERE id = %s", (out["run_id"],)).fetchone()[0]
+    assert took.total_seconds() >= 0 and run.started <= datetime.now(UTC)  # started when the run began
     actor, action = conn.execute("SELECT actor, action FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
     assert (actor, action) == ("agent:investigator", "proposal.created")
 

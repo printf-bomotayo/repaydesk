@@ -4,6 +4,7 @@ import { ExternalLink, Failed, Loading, Pill, useLoad, useOnChange } from "../co
 import { LoanLink } from "../components/records";
 import { Checks } from "../components/Checks";
 import { RetryPosting } from "../components/RetryPosting";
+import { RunLink } from "./Runs";
 import { actorLabel, CHANNEL_LABEL, day, naira, stamp } from "../format";
 import { useSession } from "../session";
 import { lineHref } from "./Payments";
@@ -252,6 +253,7 @@ function ProposalBody({ p }: { p: Line["proposals"][number] }) {
       <div style={{ marginTop: 8 }}>
         <Checks evidence={p.evidence} />
       </div>
+      <RunLink evidence={p.evidence} />
       {approvals.length > 0 && (
         <p className="note">
           Approved by {approvals.map((d) => `${d.name} (${stamp(d.at)})`).join(", then ")}.

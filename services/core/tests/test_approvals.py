@@ -379,3 +379,45 @@ def test_today_counts_the_week_and_the_work_waiting(client):
                                                "stopped": []}
     assert posted and t["postings"]["stopped"] == []
     assert t["agent"] == {"runs": 0, "proposed": 0, "suspense": 0, "failed": 0, "cost_usd": 0.0, "latest": None}
+
+
+@pytest.mark.db
+def test_an_investigation_reads_back_whole_with_what_people_decided_since(client, placed_week):
+    from repaydesk.investigator import Allocation, Finding, Run, Triage, Verdict, record
+
+    c, conn = client
+    bk, book = placed_week
+    open_lines = conn.execute("SELECT id, amount_kobo FROM payment_lines WHERE status = 'new' ORDER BY id LIMIT 2")
+    (first, amount), (second, amount2) = open_lines.fetchall()
+    loan = next(x.ref for x in book.loans if (v := bk.core.get_loan(x.ref)) and v.status == "active")
+    triage = Triage(kind="names_a_business", names=[], business="IFEOMA PHARMACY", group=None, paid_for=None,
+                    reference=None, language="english")
+    matched = Run(first, triage=triage, steps=[{"tool": "search_borrowers", "input": {"text": "IFEOMA PHARMACY"},
+                                                "output": "{\"borrowers\": []}", "error": False, "ms": 62}],
+                  verdict=Verdict(outcome="match", allocations=[Allocation(loan_ref=loan, amount_kobo=amount)],
+                                  confidence=0.85, reason="Trading name and amount agree.",
+                                  findings=[Finding(fact="Owes exactly the amount.", bearing="for")],
+                                  candidates=[loan]))
+    held = Run(second, verdict=Verdict(outcome="suspense", allocations=[], confidence=0.3,
+                                       reason="Two borrowers fit equally.", findings=[], candidates=[]))
+    m = record(conn, matched, amount, bk.core)
+    s = record(conn, held, amount2, bk.core)
+    hadiza = _as(c, "hadiza")
+
+    page = c.get("/runs", headers=hadiza).json()
+    assert [r["id"] for r in page["items"]] == [s["run_id"], m["run_id"]]  # newest first
+    assert page["counts"] == {"proposed": 1, "excluded": 0, "suspense": 1, "failed": 0} and page["all_runs"] == 2
+    assert page["items"][1]["tool_calls"] == 1 and page["items"][1]["proposal_status"] == "pending"
+    assert [r["id"] for r in c.get("/runs", headers=hadiza, params={"outcome": "suspense"}).json()["items"]] == [
+        s["run_id"]]
+    assert c.get("/runs", headers=hadiza, params={"outcome": "guessed"}).status_code == 422
+
+    detail = c.get(f"/runs/{m['run_id']}", headers=hadiza).json()
+    assert detail["line"]["id"] == first and detail["triage"]["business"] == "IFEOMA PHARMACY"
+    assert detail["steps"][0]["tool"] == "search_borrowers" and detail["verdict"]["reason"].startswith("Trading")
+    assert all(ch["ok"] for ch in detail["checks"]) and detail["proposal"]["status"] == "pending"
+    approvals.approve(conn, m["proposal_id"], SUPERVISOR)
+    after = c.get(f"/runs/{m['run_id']}", headers=hadiza).json()["proposal"]
+    assert after["status"] == "approved" and after["decisions"][0]["name"] == "Tunde Bakare"
+    assert c.get("/runs/999999", headers=hadiza).status_code == 404
+    assert c.get("/runs").status_code == 401

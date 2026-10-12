@@ -175,6 +175,73 @@ export interface LineDetail {
   trail: Omit<AuditRow, "subject">[];
 }
 
+export type RunOutcome = "proposed" | "excluded" | "suspense" | "failed";
+
+export interface RunRow {
+  id: number;
+  started_at: string;
+  line_id: string;
+  amount_kobo: number;
+  narration: string;
+  channel: Channel;
+  /** null: a person or rule placed the line while the agent worked; kept as history. */
+  outcome: RunOutcome | null;
+  confidence: number | null;
+  reason: string | null;
+  tool_calls: number;
+  cost_usd: number;
+  model: string;
+  proposal_status: string | null;
+  error: string | null;
+}
+
+export interface RunPage {
+  items: RunRow[];
+  total: number;
+  counts: Record<RunOutcome, number>;
+  all_runs: number;
+  cost_usd: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RunStep {
+  tool: string;
+  input: Record<string, unknown>;
+  output: string;
+  error?: boolean;
+  ms?: number;
+}
+
+export interface RunDetail {
+  id: number;
+  started_at: string;
+  finished_at: string | null;
+  seconds: number | null;
+  agent: string;
+  model: string;
+  classifier_model: string | null;
+  triage: { kind: string; names: string[]; business: string | null; group: string | null; paid_for: string | null; reference: string | null; language: string } | null;
+  outcome: RunOutcome | null;
+  confidence: number | null;
+  verdict: {
+    outcome: string;
+    allocations: { loan_ref: string; amount_kobo: number }[];
+    confidence: number;
+    reason: string;
+    findings: { fact: string; bearing: "for" | "against" | "neutral" }[];
+    candidates: string[];
+  } | null;
+  checks: { check: string; ok: boolean; detail: string }[];
+  proposal: { id: number; status: string; decisions: Omit<Decision, "limit_kobo">[] } | null;
+  steps: RunStep[];
+  usage: Record<string, { input: number; output: number; cache_read: number; cache_write: number }>;
+  cost_usd: number;
+  error: string | null;
+  trace_id: string | null;
+  line: { id: string; amount_kobo: number; narration: string; channel: Channel; value_date: string; payer_name: string | null; status: Status };
+}
+
 export interface CoreTransaction {
   loan_ref: string;
   external_id: string;
@@ -481,6 +548,8 @@ export const api = {
     request<LoanPage>("GET", "/loans", { query }),
   loan: (ref: string) => request<LoanRecord>("GET", `/loans/${encodeURIComponent(ref)}`),
   find: (q: string) => request<Found>("GET", "/find", { query: { q } }),
+  runs: (query: { outcome?: string; limit?: number; offset?: number }) => request<RunPage>("GET", "/runs", { query }),
+  run: (id: number | string) => request<RunDetail>("GET", `/runs/${id}`),
   audit: (query: { actor?: string; action?: string; subject?: string; before?: number | null; limit?: number }) =>
     request<AuditPage>("GET", "/audit", { query }),
 };

@@ -324,6 +324,23 @@ def find(who: Me, q: str) -> dict:
         return records.find(conn, q)
 
 
+@app.get("/runs")
+def list_runs(who: Me, outcome: str | None = None, limit: int = 50, offset: int = 0) -> dict:
+    if outcome and outcome not in views.RUN_OUTCOMES:
+        raise HTTPException(422, f"outcome is one of {', '.join(views.RUN_OUTCOMES)}")
+    with app.state.pool.connection() as conn:
+        return views.runs(conn, outcome, min(max(limit, 1), 200), max(offset, 0))
+
+
+@app.get("/runs/{run_id}")
+def get_run(run_id: int, who: Me) -> dict:
+    with app.state.pool.connection() as conn:
+        found = views.run(conn, run_id)
+    if not found:
+        raise HTTPException(404, "No such run.")
+    return found
+
+
 @app.get("/ingestion")
 def ingestion(who: Me) -> dict:
     with app.state.pool.connection() as conn:

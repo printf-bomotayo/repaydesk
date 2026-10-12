@@ -6,6 +6,7 @@ import { LoanLink } from "../components/records";
 import { RetryPosting } from "../components/RetryPosting";
 import { CHANNEL_LABEL, day, naira, stamp, STATUS_LABEL } from "../format";
 import { lineHref } from "./Payments";
+import { runHref } from "./Runs";
 
 const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 
@@ -175,6 +176,7 @@ function Page({ t, reload }: { t: Morning; reload: () => void }) {
                 ? `lines investigated: ${agent.proposed} proposed, ${agent.suspense} held in suspense${agent.failed ? `, ${agent.failed} failed` : ""}. $${agent.cost_usd.toFixed(2)} in all.`
                 : "lines investigated. It takes the ones rules can't place."}
             </span>
+            <Link to="/runs">All runs</Link>
           </div>
         </div>
       </section>
@@ -198,9 +200,10 @@ function Page({ t, reload }: { t: Morning; reload: () => void }) {
                 {agent.latest.outcome ?? "answered"} · confidence {Math.round(agent.latest.confidence * 100)}%
               </span>
             )}
-            <Link className="btn primary" to={lineHref(agent.latest.line_id)}>
-              Open the payment
+            <Link className="btn primary" to={runHref(agent.latest.run_id)}>
+              See how it decided
             </Link>
+            <Link to={lineHref(agent.latest.line_id)}>The payment</Link>
           </div>
         </section>
       )}
