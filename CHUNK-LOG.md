@@ -1371,3 +1371,140 @@ approved, not the app.
 **Plan.** Milestone 2 follow-up, chosen by the user after `m2`.
 
 ---
+
+## Chunk 10 — read-only MCP servers for the investigator ✅
+
+_Date: 2026-10-12_
+
+**What & why.** _Metaphor: the records-room window._ An investigator at a bank doesn't wander the
+vault. They go to the records-room window and ask a clerk for a file: this borrower, that loan's
+ledger card, everyone who banks under "Ifeoma Pharmacy". The clerk hands copies through the
+window, with the phone numbers and account numbers inked over. The investigator can ask for
+anything relevant, and can't take anything away or write in a single file.
+
+Milestone 3's investigator agent will work out whose loan a payment is meant for when no rule can.
+This chunk builds its window, before the agent itself, so the agent's reach is settled first:
+
+- **The bankbook MCP server**, `repaydesk.servers.bankbook`, has eight lookups:
+  - a payment line as it arrived;
+  - borrowers by name, trading name or group, fuzzily;
+  - borrowers by the phone typed on a line;
+  - a borrower and a group;
+  - a loan, read live from Fineract, with what's due next and the amounts that would fit;
+  - how a loan was paid before, and under what name;
+  - earlier payments that read like this one, and where they went.
+- **The ledger MCP server**, `repaydesk.servers.ledger`: a journal entry by its reference, and
+  account balances, read from Odoo.
+- **Fuzzy search in Postgres** (migration 007, `pg_trgm`). Payers arrive misspelt, initialled
+  ("EZE C"), reordered ("BAKARE BABAJIDE") or as a trading name ("IFEOMA PHARMACY"), and ILIKE
+  finds none of those.
+- **Usable by people too.** `.mcp.json` starts both servers for Claude Code (or Claude Desktop) in
+  the stack, and `python scripts/dev.py mcp` checks them the same way.
+
+**Decisions worth recording.** [ADR 0008](docs/adr/0008-agent-data-access.md).
+
+*Read-only at the source.* The bankbook's database session is read-only; core banking is read
+with Fineract's read-only login. The ledger server logs in to Odoo as a new `repaydesk-read` user in
+Odoo's read-only accounting group, created by the seed, and Odoo refuses it a journal entry.
+Neither server holds a credential that can post.
+
+*Names in, numbers masked.* A payer's name and a narration's words are the evidence, so the model
+reads them. Phone and account numbers reach it as their last four digits, in every answer. The one
+place a whole number matters, a phone typed at a POS terminal, has its own tool that takes the
+line's id and looks the number up itself.
+
+*Live where it decides, copied where it searches.* Searches read the directory, which says when
+it was copied. A loan's balance and what's due are read from Fineract live.
+
+*MCP 2.x.* The current major version of the Python SDK (`MCPServer`, formerly `FastMCP`). An
+unexpected error in a tool reaches the client as "Error executing tool", without details; a
+lookup that finds nothing says so, for the model to act on.
+
+**Found on the way.**
+
+- *Odoo does have a read-only accounting group.* ADR 0007 said Odoo had no fine-grained roles over
+  JSON-RPC. That's true for writing (nothing lets a login post only repayments) but not for
+  reading. The ADR is corrected in place; the gateway still uses the admin login.
+- *An MCP client starts servers with almost no environment.* On Windows the docker CLI then can't
+  find its compose plugin and rejects `--rm`. The smoke check passes the caller's environment, as
+  Claude Code does.
+
+**Principles.** _Same records-room metaphor._ *Hand copies through a window*: the agent asks, it
+never holds a key. *Ink over what isn't evidence*: numbers that reach a person or an account stay
+masked. *The same window for people and the agent*: a person in Claude Desktop gets the answers the
+agent gets. *Settle the reach before the reasoning*: tools and their limits come before the agent.
+
+**Files.**
+
+- New:
+  - `src/repaydesk/bankbook.py`, `privacy.py`;
+  - `servers/__init__.py`, `servers/bankbook.py`, `servers/ledger.py`;
+  - `migrations/007_search.sql`;
+  - `tests/test_bankbook.py`;
+  - `scripts/mcp_smoke.py`, `.mcp.json`, `docs/adr/0008-agent-data-access.md`.
+- Changed:
+  - `adapters/ports.py`, `odoo.py`, `memory.py`: `read_entry`, and Odoo's `ensure_read_user`;
+  - `seed.py`: creates the Odoo read-only login;
+  - `tests/contract/test_contracts.py`: two tests;
+  - `pyproject.toml` (`mcp`), `compose.yaml` (`bankbook` and `ledger` tools; the seed's new login),
+    `.env.example`, `scripts/dev.py` and `Makefile` (`mcp`), `.github/workflows/ci.yml`, `README.md`;
+  - `docs/adr/0007-posting-gateway.md`: Odoo's roles, corrected.
+
+**Depends on / blocks.** Depends on chunk 7 (the directory) and chunk 8 (the read-only Fineract
+login). Blocks chunk 11, the investigator agent, which reads only through these servers.
+
+**Verification.** `ruff` clean. `pytest`: 112 passed, 9 new.
+
+- Masking: phones in three spellings, account numbers, and a bank's reference left alone.
+- Search finds a borrower from their reordered name, an initialled one, their trading name, and
+  the trading name buried in a narration. An exact name scores 1.0, and a branch filter excludes
+  them elsewhere.
+- A POS line's typed phone finds its borrower, and the number appears in no answer.
+- A loan read through the tools lists its next instalment among the amounts that would fit.
+- History shows the lines Repaydesk matched to a loan with the payer's name, and core banking's
+  repayments.
+- The session refuses a `DELETE`.
+- Over the MCP protocol (in memory), both servers offer only read-only tools, and a missing loan
+  or journal entry comes back as a message.
+
+Contract tests against Fineract and Odoo: 11 passed, two new. A journal entry reads back line by
+line (both adapters), and Odoo's read-only login reads entries and balances but is refused a
+posting. The gateway's tests (30) pass with the new migration.
+
+On the running stack:
+
+- **The migration** applied on the API's start.
+- **The seed** created the Odoo login ("Odoo login repaydesk-read: read-only accounting").
+- **`python scripts/dev.py mcp`** started both servers over stdio through
+  `docker compose run`, as `.mcp.json` does. It listed 8 and 2 tools, all read-only, and answered
+  a search and the balances; phones came back masked.
+- **A real hard case through the tools.** Take ₦605,000 "TRF FROM IFEOMA PHARMACY":
+  - The search returns two borrowers trading as Ifeoma Pharmacy (Onitsha and Ikeja), both scoring
+    1.0.
+  - Read live, the Onitsha loan owes exactly ₦605,000. The Ikeja loan owes ₦58,080, with a
+    monthly history at that amount.
+  - That is the evidence the agent will weigh.
+
+What it does not prove:
+
+- **That a model uses the tools well.** That is chunk 11's agent, and its evals.
+- **Search at a bank's size.** It ran on 2,039 borrowers. The GIN indexes are there for more, but
+  query plans weren't checked at scale.
+- **Claude Desktop itself.** Only the same stdio launch was checked, not the app.
+- **The HTTP transport** (`--http`), which nothing uses yet.
+
+**PR package.**
+
+- Subject: `Chunk 10: read-only MCP servers for the investigator (bankbook, ledger), fuzzy search`
+- Description:
+  > Adds two MCP servers (Python MCP SDK 2.x) that the milestone 3 investigator agent will read
+  > through, and that Claude Code or Desktop can use via `.mcp.json`. `bankbook` looks up payment
+  > lines, borrowers (trigram fuzzy search over names, trading names and groups), loans live from
+  > Fineract, and payment history. `ledger` reads journal entries and balances from Odoo. Every
+  > tool is read-only at the source: a read-only database session, Fineract's read-only login, and
+  > a new read-only Odoo login the seed creates. Phone and account numbers are masked in every
+  > answer; the one tool that needs a phone looks it up server-side. ADR 0008.
+
+**Plan.** Milestone 3, investigator agent, MCP and evals: the read-only MCP servers.
+
+---

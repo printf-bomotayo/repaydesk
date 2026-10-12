@@ -15,6 +15,7 @@
     python scripts/dev.py gateway   the posting gateway's tests (.NET; database tests use the compose Postgres)
     python scripts/dev.py test      unit, contract and database tests (database tests skip without the stack)
     python scripts/dev.py itest     contract tests against the running Fineract and Odoo
+    python scripts/dev.py mcp       the MCP servers over stdio, as an MCP client starts them
     python scripts/dev.py lint      ruff, and the web app's type check
     python scripts/dev.py web       the web app with live reload (http://127.0.0.1:5173)
     python scripts/dev.py webtest   the web app's tests
@@ -114,6 +115,14 @@ def ensure_env() -> None:
         print("added to .env:", ", ".join(added))
 
 
+def env_value(key: str) -> str:
+    env = ROOT / ".env"
+    if not env.exists():
+        return ""
+    values = dict(line.split("=", 1) for line in env.read_text().splitlines() if "=" in line and not line.startswith("#"))
+    return values.get(key, "")
+
+
 def test_database_url() -> str:
     env = ROOT / ".env"
     if not env.exists():
@@ -173,7 +182,12 @@ def main(task: str) -> None:
         run(python(), "-m", "pytest", "-q", "-m", "integration", cwd=CORE, env={
             "FINERACT_URL": "http://127.0.0.1:18080/fineract-provider/api/v1",
             "ODOO_URL": "http://127.0.0.1:18069",
+            "ODOO_READ_PASSWORD": env_value("ODOO_READ_PASSWORD"),
         })
+    elif task == "mcp":
+        # Both MCP servers over stdio, started the way .mcp.json starts them: tools listed, one call each.
+        run("docker", "compose", "build", "bankbook", "ledger")  # a first run would build while the client waits
+        run(python(), str(ROOT / "scripts" / "mcp_smoke.py"))
     elif task == "lint":
         run(python(), "-m", "ruff", "check", "src", "tests", cwd=CORE)
         run(npm(), "run", "typecheck", cwd=WEB)

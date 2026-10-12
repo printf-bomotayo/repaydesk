@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "repaydesk-bankbook": {
+      "command": "docker",
+      "args": ["compose", "run", "--rm", "-T", "--quiet-pull", "bankbook"]
+    },
+    "repaydesk-ledger": {
+      "command": "docker",
+      "args": ["compose", "run", "--rm", "-T", "--quiet-pull", "ledger"]
+    }
+  }
+}

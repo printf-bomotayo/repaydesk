@@ -171,6 +171,15 @@ class JournalEntry:
         return sum(line.debit for line in self.lines) == sum(line.credit for line in self.lines)
 
 
+@dataclass(frozen=True)
+class LedgerEntry:
+    """A journal entry as the ledger holds it: its own name and state beside what was posted."""
+
+    name: str  # the ledger's id for it, e.g. RPY/2026/10/0013
+    state: str  # posted, draft
+    entry: JournalEntry
+
+
 class Ledger(Protocol):
     def ensure_setup(self, bank_name: str, collection_accounts: dict[str, tuple[str, str]]) -> None: ...
 
@@ -181,6 +190,8 @@ class Ledger(Protocol):
     def balance(self, account_code: str) -> int: ...
 
     def find_entry(self, reference: str) -> str | None: ...
+
+    def read_entry(self, reference: str) -> LedgerEntry | None: ...
 
 
 # ---- incoming payments ----------------------------------------------------------------------

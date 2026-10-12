@@ -7,7 +7,7 @@ approve everything that moves money or reaches a customer.
 It runs on open-source finance systems: **Apache Fineract** as core banking and **Odoo
 Community** as the ledger. Every borrower, loan and payment in it is synthetic.
 
-> Status: milestones 1 and 2 of 6 done (tags `m1`, `m2`); milestone 3 next. Built in chunks, each verified and logged in
+> Status: milestones 1 and 2 of 6 done (tags `m1`, `m2`); milestone 3 in progress. Built in chunks, each verified and logged in
 > [`CHUNK-LOG.md`](CHUNK-LOG.md). See [the roadmap](#roadmap).
 
 ## The problem
@@ -53,7 +53,7 @@ ingested and matched by rule, Amaka and Tunde approve through the API, the gatew
 demo finds each repayment in Fineract and each journal entry in Odoo. Then open **Today**.
 [`docs/demo.md`](docs/demo.md) is the same story to click through, for showing someone.
 
-Other tasks: `seed`, `ingest`, `match`, `score`, `demo`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
+Other tasks: `seed`, `ingest`, `match`, `score`, `demo`, `mcp`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
 and for the web app `web` (live reload on http://127.0.0.1:5173, needs Node 24) and `webtest`
 (`python scripts/dev.py <task>`).
 
@@ -150,6 +150,13 @@ Built so far (milestone 1):
   once the cause is fixed, a person sends it back with **Retry posting**; the gateway rechecks the
   approval, and the key keeps it from posting twice. `python scripts/dev.py demo` runs the whole
   milestone against the stack.
+- **MCP servers** (chunk 10, `repaydesk.servers`): read-only lookups for the investigator agent
+  and any MCP client. `bankbook` finds borrowers by misspelt, initialled, reordered or trading
+  names (Postgres trigram search), reads a loan live from Fineract with what's due, and shows how a
+  loan was paid before and under what name. `ledger` reads journal entries and balances from Odoo
+  through a read-only Odoo login. Phone and account numbers reach a model masked; a tool that needs
+  a whole phone number looks it up itself. Claude Code picks both up from `.mcp.json`;
+  `python scripts/dev.py mcp` checks them. See [ADR 0008](docs/adr/0008-agent-data-access.md).
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract

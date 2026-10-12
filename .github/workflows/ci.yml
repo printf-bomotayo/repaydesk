@@ -139,7 +139,11 @@ jobs:
         env:
           FINERACT_URL: http://127.0.0.1:18080/fineract-provider/api/v1
           ODOO_URL: http://127.0.0.1:18069
-        run: pytest -q -m integration
+        run: ODOO_READ_PASSWORD=$(grep '^ODOO_READ_PASSWORD=' ../../.env | cut -d= -f2-) pytest -q -m integration
+      - name: the MCP servers answer over stdio, as Claude Desktop or the agent would start them
+        run: |
+          docker compose build bankbook ledger
+          python scripts/mcp_smoke.py
       - name: the seed left a trace in Jaeger
         run: |
           curl -sf "http://127.0.0.1:16686/api/traces?service=repaydesk-seed&limit=1" | python -c \

@@ -9,6 +9,7 @@ the posting gateway also keeps its own unique key per posting; this check is the
 from __future__ import annotations
 
 import itertools
+import re
 import threading
 from datetime import date
 from typing import Any
@@ -17,7 +18,7 @@ import httpx
 from opentelemetry import trace
 
 from repaydesk.adapters.chart import CHART, JOURNAL_CODES, REPAYMENT_JOURNAL, collection_account_code
-from repaydesk.adapters.ports import AlreadyPosted, JournalEntry
+from repaydesk.adapters.ports import AlreadyPosted, JournalEntry, JournalLine, LedgerEntry
 
 tracer = trace.get_tracer("repaydesk.adapters.odoo")
 
@@ -127,6 +128,26 @@ class OdooLedger:
             self._journals[code] = found[0]
         return self._journals[code]
 
+    def _xmlid(self, xmlid: str) -> int:
+        module, name = xmlid.split(".")
+        found = self._x("ir.model.data", "search_read", [["module", "=", module], ["name", "=", name]],
+                        fields=["res_id"], limit=1)
+        if not found:
+            raise OdooError(f"Odoo has no {xmlid}")
+        return found[0]["res_id"]
+
+    def ensure_read_user(self, login: str, password: str) -> None:
+        """A login that can read the books and change nothing: an internal user in Odoo's read-only
+        accounting group, and no other. For the ledger MCP server (ADR 0008)."""
+        groups = [self._xmlid("base.group_user"), self._xmlid("account.group_account_readonly")]
+        values = {"name": "Repaydesk (read only)", "login": login, "password": password,
+                  "groups_id": [(6, 0, groups)]}
+        found = self._x("res.users", "search", [["login", "=", login]], context={"active_test": False})
+        if found:
+            self._x("res.users", "write", found, values)
+        else:
+            self._x("res.users", "create", values)
+
     # ---- entries -------------------------------------------------------------------------------
 
     def find_entry(self, reference: str) -> str | None:
@@ -155,6 +176,21 @@ class OdooLedger:
             })
             self._x("account.move", "action_post", [move_id])
             return self._x("account.move", "read", [move_id], fields=["name"])[0]["name"]
+
+    def read_entry(self, reference: str) -> LedgerEntry | None:
+        """An entry by its reference, with each line's account code, as Odoo holds it now."""
+        found = self._x("account.move", "search_read", [["ref", "=", reference], ["state", "!=", "cancel"]],
+                        fields=["name", "date", "state", "narration", "journal_id", "line_ids"], limit=1)
+        if not found:
+            return None
+        move = found[0]
+        rows = self._x("account.move.line", "read", move["line_ids"], fields=["account_id", "debit", "credit", "name"])
+        lines = tuple(JournalLine(r["account_id"][1].split()[0], round(r["debit"] * 100), round(r["credit"] * 100),
+                                  r["name"] or "") for r in rows)
+        memo = re.sub(r"<[^>]+>", "", move["narration"] or "").strip()
+        journal = move["journal_id"][1] if move["journal_id"] else ""
+        return LedgerEntry(move["name"], move["state"],
+                           JournalEntry(date.fromisoformat(move["date"]), reference, memo, journal, lines))
 
     def balance(self, account_code: str, as_of: date | None = None) -> int:
         domain = [["account_id", "=", self._account(account_code)], ["parent_state", "=", "posted"]]

@@ -35,8 +35,9 @@ can die between the two writes, and a bank may run more than one copy of it.
 - **Each service has its own Fineract login.** The seed creates `repaydesk-read`
   (`ALL_FUNCTIONS_READ`) for the API, the directory and rule matching, and `repaydesk-gateway`
   (`READ_LOAN`, `REPAYMENT_LOAN`, `READ_PAYMENTTYPE`) for the gateway. The admin login is for the
-  seed and for people. Odoo Community has no comparably fine roles over JSON-RPC, so the seed and
-  the gateway share its admin login, and nothing else in Repaydesk has it.
+  seed and for people. Odoo has a read-only accounting group (the ledger MCP server's login, ADR
+  0008), but nothing between that and full accounting rights that would let a login post only
+  repayments, so the seed and the gateway share its admin login, and nothing else in Repaydesk has it.
 
 ## Consequences
 

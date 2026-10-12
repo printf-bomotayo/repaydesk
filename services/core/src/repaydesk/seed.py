@@ -143,6 +143,15 @@ def service_users(core: FineractCoreBanking) -> None:
         log(f"Fineract login {username}: {', '.join(permissions)}")
 
 
+def ledger_read_user(ledger: OdooLedger) -> None:
+    username, password = os.getenv("ODOO_READ_USERNAME"), os.getenv("ODOO_READ_PASSWORD")
+    if not (username and password):
+        log("ODOO_READ_USERNAME and ODOO_READ_PASSWORD not set: no read-only login in Odoo")
+        return
+    ledger.ensure_read_user(username, password)
+    log(f"Odoo login {username}: read-only accounting")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--borrowers", type=int, default=int(os.getenv("SEED_BORROWERS", "2000")))
@@ -202,6 +211,7 @@ def _run(args, root) -> int:
         wait_for("Odoo", ledger.health)
         counts = load(book, core, ledger)
         service_users(core)
+        ledger_read_user(ledger)
 
         with conn.transaction(), conn.cursor() as cur:
             cur.executemany(

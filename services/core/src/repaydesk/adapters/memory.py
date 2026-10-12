@@ -14,6 +14,7 @@ from repaydesk.adapters.ports import (
     DirectoryBorrower,
     DueInstallment,
     JournalEntry,
+    LedgerEntry,
     LoanSummary,
     LoanView,
     OutboundMessage,
@@ -175,6 +176,10 @@ class MemoryLedger:
 
     def find_entry(self, reference: str) -> str | None:
         return reference if reference in self.entries else None
+
+    def read_entry(self, reference: str) -> LedgerEntry | None:
+        entry = self.entries.get(reference)
+        return LedgerEntry(reference, "posted", entry) if entry else None
 
 
 class MemoryMessaging:

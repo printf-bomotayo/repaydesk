@@ -211,6 +211,33 @@ def test_unbalanced_entry_is_refused(ledger):
     assert ledger.find_entry(bad.reference) is None
 
 
+def test_an_entry_reads_back_line_by_line(ledger):
+    ref = f"CT-{_unique()}"
+    ledger.post_entry(_entry(ref))
+    got = ledger.read_entry(ref)
+    assert got.name and got.state == "posted" and got.entry.on == TODAY
+    assert sorted((x.account_code, x.debit, x.credit) for x in got.entry.lines) == sorted(
+        (x.account_code, x.debit, x.credit) for x in _entry(ref).lines)
+    assert ledger.read_entry(f"CT-{_unique()}") is None
+
+
+@pytest.mark.integration
+def test_odoo_read_login_reads_the_books_and_cannot_post():
+    from repaydesk.adapters.odoo import OdooError, OdooLedger
+
+    if not os.getenv("ODOO_READ_PASSWORD"):
+        pytest.skip("ODOO_READ_PASSWORD not set")
+    admin = _odoo()
+    ref = f"CT-{_unique()}"
+    admin.post_entry(_entry(ref))
+    reader = OdooLedger(os.environ["ODOO_URL"], os.getenv("ODOO_DB", "ledger"),
+                        os.getenv("ODOO_READ_USERNAME", "repaydesk-read"), os.environ["ODOO_READ_PASSWORD"])
+    assert reader.read_entry(ref).name == admin.read_entry(ref).name
+    assert reader.balance(PRINCIPAL) == admin.balance(PRINCIPAL)
+    with pytest.raises(OdooError, match="not allowed"):
+        reader.post_entry(_entry(f"CT-{_unique()}"))
+
+
 @pytest.mark.integration
 def test_odoo_names_every_account_as_repaydesk_means_it():
     """Odoo's generic chart already uses some of our codes (131000 is its "Tax Paid"). Setup must
