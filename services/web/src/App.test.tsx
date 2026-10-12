@@ -179,7 +179,9 @@ test("a posted line's case file shows what each book called it; a failed one say
   fireEvent.click(screen.getByRole("link", { name: "Payments" }));
   await screen.findByText("Transfer from ZAINAB SHEHU (redelivered)");
   window.history.back();
-  expect(await screen.findByText("Fineract 403: Loan is not active.")).toBeInTheDocument();
+  const banner = await screen.findByRole("region", { name: "Posting stopped" }); // coral, at the top: it needs a person
+  expect(banner).toHaveTextContent("Fineract 403: Loan is not active.");
+  expect(banner).toHaveTextContent("RD-P110");
   expect(screen.getByText("Why it stopped")).toBeInTheDocument();
   expect(screen.getByText(/won't try this again on its own/)).toBeInTheDocument();
 

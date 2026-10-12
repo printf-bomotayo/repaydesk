@@ -1822,3 +1822,121 @@ What it does not prove:
 report.
 
 ---
+
+## Chunk 12a — the UI refresh (design A) ✅
+
+_Date: 2026-10-12_
+
+**What & why.** _Metaphor: a well-kept ledger room._ White paper, black ink, and colour only where
+it means something: a red tab on the file that needs a person, a green stamp on what's done, the
+investigator's notes on cream paper. The room is calm, so the one red tab is impossible to miss.
+
+The user asked for a refreshed UI after `DESIGN.md`, an editorial, near-black-on-white system, and
+chose direction A from two mockups ([canvas](https://claude.ai/artifact/LZv2d9Q8N8DVwHT1z6x46B),
+page A). Direction B, black and violet, after `revolut/DESIGN.md`, was the other. This chunk
+rebuilds the web app in A:
+
+- **A new stylesheet**, built on the design's tokens:
+  - white canvas and near-black ink, in Hanken Grotesk, a free stand-in for the licensed Haas;
+  - type at weights 400 and 500 only;
+  - a near-black primary button beside a white outlined one, with 12px corners;
+  - square-cornered status tags;
+  - hairline tables and a segmented filter.
+
+  The old variable names still resolve, so every page took the look without its own edit.
+- **A two-row top bar** in place of the sidebar:
+  - **Row one:** the bank's name, search, and, on the right, the Prototype tag beside a boxed
+    account panel (initials, name, role and limit, Sign out). That placement was the user's
+    request after the first build, where the profile had wrapped to the left under the bar.
+  - **Row two:** the tabs.
+  - **On a phone:** a menu button.
+- **Today, as the mockup:**
+  - the week in a navy card;
+  - a coral "needs a person" card when a posting stopped, or a forest "Nothing stuck" card;
+  - four tinted tiles: awaiting review, not matched yet by age, posted today, and the
+    investigator's last seven days;
+  - the investigator's latest note on cream.
+
+  `GET /today` gains the investigator's figures and that note.
+- **The review queue**: the investigator's proposals show on cream; a rule's on a soft grey.
+- **The case file**: a coral banner at the top when a posting stopped, holding the Retry button.
+
+**Decisions worth recording.**
+
+*Colour means the same thing everywhere*:
+- navy: the headline numbers;
+- coral: needs a person;
+- forest: done;
+- cream: the investigator's own words;
+- peach, yellow and mint: queue states, with ink text on them.
+
+The design file uses its signature colours for rhythm; a working tool uses them for meaning.
+
+*Light only, for now.* The design has no dark mode, and Graphite (chunk 9a) is replaced. A dark
+version of A can come later.
+
+*Kept from the old look:* keyboard focus rings. The design documents no hover states, and only
+focus is kept. A tool needs to show where the keyboard is.
+
+*One Retry per screen.* On Today, the coral card links down to the stopped postings, and Retry
+stays in that table. On the case file, Retry moves from the posting panel to the banner.
+
+**Principles.** _Same ledger-room metaphor._ *Calm by default, loud on purpose*: white and ink
+everywhere, colour only for a state. *Who you are, apart from what you do*: the account sits boxed
+on the right, away from the page's controls. *One action, one place.*
+
+**Files.**
+
+- New: `DESIGN.md` (the reference).
+- Changed:
+  - `services/web/src/styles.css` (rewritten), `index.html` (fonts);
+  - `components/Shell.tsx` (the two-row top bar), `components/RetryPosting.tsx` (a white button on
+    coral);
+  - `pages/Today.tsx` (the mockup's layout), `pages/Review.tsx` (cream for the investigator),
+    `pages/LineDetail.tsx` (the coral banner), `api.ts`, `App.test.tsx`;
+  - `services/core/src/repaydesk/views.py` (the investigator in `/today`),
+    `tests/test_approvals.py`;
+  - `README.md`.
+
+**Depends on / blocks.** Depends on chunks 5 to 12 (the screens it restyles). Blocks chunk 13,
+whose Agent runs screen is drawn in the same mockup.
+
+**Verification.** `ruff` clean. The Today API test checks the investigator's figures (none in an
+empty schema). `tsc` clean, `vitest` 28 passed (the case file's test now checks the coral banner),
+and the production build succeeds.
+
+In Chrome, signed in by the user on the running stack:
+- **Today**, as the mockup: the navy week card (₦52,624,014; 219 lines; 62% by rule) and the forest
+  "Nothing stuck". The tiles show 230 awaiting review and ₦27.7m not matched. The investigator's
+  latest note is run 15, ₦968,000, at 88%, followed by the by-channel table and the flow bar.
+- **The header**, after the user's note: the account panel is boxed on the right with the Prototype
+  tag, and the tabs sit on their own row.
+- **The review queue**: the segmented filter, the cards, and the yellow "needs two people" tag.
+
+Found and fixed on the way: the right-aligned table headings took the number font.
+
+What it does not prove:
+
+- **A stopped posting's coral card and banner on the live stack.** None is stopped right now.
+  The case file's banner is covered by the test, and Today's coral card by its tests' stopped
+  posting.
+- **Phone width in a real browser.** The mockup's phone screen guided the CSS, but the app wasn't
+  checked at 390px.
+- **Borrowers, Loans, Ingestion and Audit, screen by screen.** They took the new look from the
+  stylesheet. The Audit log was seen in passing, and the others weren't opened.
+
+**PR package.**
+
+- Subject: `Chunk 12a: the UI refresh after DESIGN.md (direction A)`
+- Description:
+  > Rebuilds the web app's look after DESIGN.md: white canvas, near-black ink, weights 400/500,
+  > a near-black primary button beside a white outlined one, and colour that always means one
+  > thing (navy numbers, coral needs a person, forest done, cream the investigator's words). A
+  > two-row top bar replaces the sidebar, with the signed-in account boxed on the right. Today
+  > follows the approved mockup, with the investigator's week and latest note; the review queue
+  > shows the investigator's proposals on cream; a stopped posting gets a coral banner with
+  > Retry on its case file.
+
+**Plan.** Milestone 3 follow-up, chosen by the user: the UI refresh before the Agent runs screen.
+
+---

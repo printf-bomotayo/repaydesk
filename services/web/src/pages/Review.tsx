@@ -140,7 +140,7 @@ function Proposal({ item, readOnly, onDecided }: { item: QueueItem; readOnly: bo
     });
 
   return (
-    <article className="queue-item" aria-label={`${naira(line.amount_kobo)} from ${line.payer_name ?? "an unnamed payer"}`}>
+    <article className={`queue-item${item.proposed_by.startsWith("agent:") ? " agent" : ""}`} aria-label={`${naira(line.amount_kobo)} from ${line.payer_name ?? "an unnamed payer"}`}>
       <div>
         <span className="ch">
           {CHANNEL_LABEL[line.channel] ?? line.channel} · {day(line.value_date)}

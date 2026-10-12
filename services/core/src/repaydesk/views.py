@@ -273,6 +273,15 @@ def today(conn: psycopg.Connection, two_person_above_kobo: int) -> dict:
         "WHERE status <> 'posted' OR (posted_at AT TIME ZONE %s)::date = %s GROUP BY 1",
         (BANK_TIMEZONE, on)).fetchall())
     stopped = conn.execute(_STOPPED).fetchall()
+    # The investigator over the last seven days, and the note from its latest answer (ADR 0009).
+    runs = conn.execute(
+        "SELECT count(*), count(*) FILTER (WHERE outcome = 'proposed'), count(*) FILTER (WHERE outcome = 'suspense'), "
+        "count(*) FILTER (WHERE outcome = 'failed'), coalesce(sum(cost_usd), 0) FROM agent_runs "
+        "WHERE started_at > now() - interval '7 days'").fetchone()
+    latest = conn.execute(
+        "SELECT r.id, r.line_id, l.amount_kobo, l.narration, r.outcome, r.confidence, r.verdict->>'reason' "
+        "FROM agent_runs r JOIN payment_lines l ON l.id = r.line_id WHERE r.verdict IS NOT NULL "
+        "ORDER BY r.id DESC LIMIT 1").fetchone()
 
     received = [v for k, v in by_status.items() if k != "duplicate"]
     lines_received = sum(c for c, _ in received)
@@ -294,6 +303,13 @@ def today(conn: psycopg.Connection, two_person_above_kobo: int) -> dict:
                        "lines": sum(1 for d, _ in unmatched if lo <= d and (hi is None or d <= hi)),
                        "amount_kobo": sum(a for d, a in unmatched if lo <= d and (hi is None or d <= hi))}
                       for label, lo, hi in AGE_BANDS],
+        },
+        "agent": {
+            "runs": runs[0], "proposed": runs[1], "suspense": runs[2], "failed": runs[3],
+            "cost_usd": round(float(runs[4]), 4),
+            "latest": {"run_id": latest[0], "line_id": latest[1], "amount_kobo": latest[2], "narration": latest[3],
+                       "outcome": latest[4], "confidence": float(latest[5]) if latest[5] is not None else None,
+                       "reason": latest[6]} if latest else None,
         },
         "postings": {
             "posted_today": postings.get("posted", 0), "waiting": postings.get("waiting", 0),

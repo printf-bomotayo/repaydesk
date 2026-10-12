@@ -16,6 +16,8 @@ interface Area {
   alert?: boolean;
 }
 
+// The top bar shows Work and Records, then System after a divider. Areas still to come (Later) are
+// named in the footer instead, so the bar holds only places a person can work in.
 export const AREAS: { label: string; areas: Area[] }[] = [
   {
     label: "Work",
@@ -58,12 +60,38 @@ function count(a: Area, summary: Summary | null): number | null {
 
 const ROLE: Record<string, string> = { officer: "Officer", supervisor: "Supervisor", auditor: "Auditor, read only" };
 
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .toUpperCase();
+}
+
+function AreaLink({ area, summary }: { area: Area; summary: Summary | null }) {
+  const n = count(area, summary);
+  return (
+    <NavLink to={area.to}>
+      <span>{area.label}</span>
+      {n !== null ? (
+        <span className={area.alert ? "count alert" : "count"} title={area.alert ? "Postings that stopped" : undefined}>
+          {n.toLocaleString()}
+        </span>
+      ) : area.later ? (
+        <span className="later">soon</span>
+      ) : null}
+    </NavLink>
+  );
+}
+
 export function Shell() {
   const { staff, config, signOut } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [search, setSearch] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Navigation counts, refreshed on each move between screens and after any decision. Cheap: two counts.
   const refresh = useCallback(() => {
@@ -71,6 +99,7 @@ export function Shell() {
   }, []);
   useEffect(refresh, [location.pathname, refresh]);
   useOnChange(refresh);
+  useEffect(() => setMenuOpen(false), [location.pathname]); // a phone's menu closes on arrival
 
   // A loan reference, customer reference or phone opens that record; anything else searches payments.
   async function onSearch(e: FormEvent) {
@@ -83,66 +112,83 @@ export function Shell() {
     else navigate(`/payments?q=${encodeURIComponent(q)}`);
   }
 
+  const group = (label: string) => AREAS.find((g) => g.label === label)?.areas ?? [];
+  const later = group("Later");
+
   return (
     <div className="app">
-      <aside className="side">
-        <div className="brand">
-          <b>Repaydesk</b>
-          <small>{config?.bank_name ?? " "}</small>
-        </div>
-        {AREAS.map((group) => (
-          <div key={group.label}>
-            <div className="nav-label">{group.label}</div>
-            <nav className="nav" aria-label={group.label}>
-              {group.areas.map((a) => (
-                <NavLink key={a.to} to={a.to}>
-                  <span>{a.label}</span>
-                  {count(a, summary) !== null ? (
-                    <span className={a.alert ? "count alert" : "count"} title={a.alert ? "Postings that stopped" : undefined}>
-                      {count(a, summary)!.toLocaleString()}
-                    </span>
-                  ) : a.later ? (
-                    <span className="later">{a.later}</span>
-                  ) : null}
-                </NavLink>
-              ))}
-            </nav>
-          </div>
-        ))}
-        <div className="side-foot">Synthetic data. Every borrower and payment is generated.</div>
-      </aside>
-      <div className="main">
-        <header className="top">
-          <form role="search" onSubmit={onSearch}>
+      <header className="topbar" data-open={menuOpen}>
+        {/* Row one: whose bank, search, and who is signed in, kept apart on the right. */}
+        <div className="topbar-in bar-top">
+          <NavLink to="/today" className="brand">
+            <b>Repaydesk</b>
+            <small>{config?.bank_name ?? " "}</small>
+          </NavLink>
+          <form role="search" className="search" onSubmit={onSearch}>
             <input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search: a loan, customer ref or phone opens it; anything else searches payments"
+              placeholder="Search a loan, customer ref or phone"
               aria-label="Search"
             />
           </form>
-          <span className="proto">Prototype</span>
-          {staff && (
-            <span className="who">
-              <span>
-                <b>{staff.name}</b>
-                <br />
-                <span className="role">
-                  {ROLE[staff.role]}
-                  {staff.limit_kobo > 0 && ` · limit ${naira(staff.limit_kobo)}`}
-                </span>
-              </span>
-              <button className="btn" onClick={signOut}>
-                Sign out
-              </button>
+          <div className="account-group">
+            <span className="proto" title="Every borrower, loan and payment here is synthetic">
+              Prototype
             </span>
-          )}
-        </header>
-        <main className="page">
-          <Outlet />
-        </main>
-      </div>
+            {staff && (
+              <div className="account" aria-label="Signed in">
+                <span className="avatar" aria-hidden="true">
+                  {initials(staff.name)}
+                </span>
+                <span className="who">
+                  <b>{staff.name}</b>
+                  <span className="role">
+                    {ROLE[staff.role]}
+                    {staff.limit_kobo > 0 && ` · limit ${naira(staff.limit_kobo)}`}
+                  </span>
+                </span>
+                <button className="btn signout" onClick={signOut}>
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="menu-btn"
+            aria-label={menuOpen ? "Close the menu" : "Open the menu"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+              {menuOpen ? <path d="M4 4l10 10M14 4L4 14" /> : <path d="M2 4.5h14M2 9h14M2 13.5h14" />}
+            </svg>
+          </button>
+        </div>
+        {/* Row two: where to go. */}
+        <div className="topbar-in bar-nav">
+          <nav className="nav" aria-label="Main">
+            {[...group("Work"), ...group("Records")].map((a) => (
+              <AreaLink key={a.to} area={a} summary={summary} />
+            ))}
+            <span className="sep" aria-hidden="true" />
+            {group("System").map((a) => (
+              <AreaLink key={a.to} area={a} summary={summary} />
+            ))}
+          </nav>
+        </div>
+      </header>
+      <main className="page">
+        <Outlet />
+      </main>
+      <footer className="foot">
+        <div className="foot-in">
+          <span>Repaydesk, a prototype. Every borrower, loan and payment here is synthetic.</span>
+          <span>Still to come: {later.map((a) => `${a.label} (${a.later})`).join(", ")}</span>
+        </div>
+      </footer>
     </div>
   );
 }

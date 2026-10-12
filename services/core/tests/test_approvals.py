@@ -378,3 +378,4 @@ def test_today_counts_the_week_and_the_work_waiting(client):
     assert t["postings"] | {"stopped": []} == {"posted_today": 0, "waiting": 1, "retrying": 0, "failed": 0,
                                                "stopped": []}
     assert posted and t["postings"]["stopped"] == []
+    assert t["agent"] == {"runs": 0, "proposed": 0, "suspense": 0, "failed": 0, "cost_usd": 0.0, "latest": None}

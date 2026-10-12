@@ -63,6 +63,8 @@ function CaseFile({ line }: { line: Line }) {
         </div>
       </div>
 
+      {line.posting?.status === "failed" && <Stopped line={line} posting={line.posting} />}
+
       {line.duplicate_of && (
         <div className="later-box">
           A second sighting of a line already held, kept so it's on record that it arrived. The original is{" "}
@@ -272,6 +274,28 @@ const POSTING_PILL = {
 } as const;
 
 /** What the gateway did: Fineract's repayment for each loan, split as Fineract applied it, and the ledger entry. */
+/** A posting the books refused, at the top of the case file in coral: it needs a person. */
+function Stopped({ line, posting }: { line: Line; posting: NonNullable<Line["posting"]> }) {
+  const refused = line.trail.filter((t) => t.action.startsWith("posting.")).at(-1)?.action === "posting.refused";
+  return (
+    <section className="sig sig-coral" aria-label="Posting stopped" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "center", gap: 24 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+        <span className="eyebrow">
+          {refused ? "Refused by the gateway" : "Posting stopped"} · <span className="mono">{posting.idempotency_key}</span> ·{" "}
+          {posting.attempts} attempt{posting.attempts === 1 ? "" : "s"}
+        </span>
+        <h2 style={{ fontSize: 26 }}>{posting.last_error ?? "It stopped without a reason."}</h2>
+        <p>
+          {refused
+            ? "The decisions don't support this approval, so a retry would be refused the same way. It needs a new proposal and decision."
+            : "Put the cause right in core banking or the ledger, then send it back: the gateway rechecks the approval, and the key keeps it from posting twice."}
+        </p>
+      </div>
+      <RetryPosting outboxId={posting.outbox_id} refused={refused} onDark />
+    </section>
+  );
+}
+
 function PostingPanel({ posting, refused }: { posting: NonNullable<Line["posting"]>; refused: boolean }) {
   const [pill, label] = POSTING_PILL[posting.status];
   return (
@@ -348,11 +372,6 @@ function PostingPanel({ posting, refused }: { posting: NonNullable<Line["posting
                 ? "Fineract has the repayment; the ledger didn't answer. The next attempt finds Fineract's repayment by this key and writes only the ledger entry."
                 : "The posting gateway picks this up within seconds. It looks each write up by this key before making it, so a retry never posts twice."}
         </p>
-        {posting.status === "failed" && (
-          <div className="actions">
-            <RetryPosting outboxId={posting.outbox_id} refused={refused} />
-          </div>
-        )}
       </div>
     </section>
   );

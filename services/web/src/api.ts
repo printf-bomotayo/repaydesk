@@ -61,6 +61,23 @@ export interface Today {
     bands: { label: string; lines: number; amount_kobo: number }[];
   };
   postings: { posted_today: number; waiting: number; retrying: number; failed: number; stopped: StoppedPosting[] };
+  /** The investigator over the last seven days, and the note from its latest answer. */
+  agent?: {
+    runs: number;
+    proposed: number;
+    suspense: number;
+    failed: number;
+    cost_usd: number;
+    latest: {
+      run_id: number;
+      line_id: string;
+      amount_kobo: number;
+      narration: string;
+      outcome: string | null;
+      confidence: number | null;
+      reason: string | null;
+    } | null;
+  };
 }
 
 export interface LineRow {

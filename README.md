@@ -170,6 +170,10 @@ Built so far (milestone 1):
   loans to the kobo, wrong, or held in suspense. `python scripts/dev.py eval`, or the manual
   **Investigator eval** workflow in GitHub Actions. The first runs found and fixed a search that
   hid how many borrowers matched, and cut wrong answers from 5 to 3.
+- **The look** (chunk 12a): the web app follows [`DESIGN.md`](DESIGN.md), direction A of the
+  [refresh mockup](https://claude.ai/artifact/LZv2d9Q8N8DVwHT1z6x46B). White canvas and near-black
+  ink, a top bar, and colour that always means the same thing: navy for the week's numbers, coral
+  for "needs a person", forest for done, cream for the investigator's words.
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract
