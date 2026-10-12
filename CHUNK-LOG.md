@@ -1977,7 +1977,9 @@ Chunk 11 recorded every run, but nobody could see one without a database. This c
 **Found on the way.** *A run's start time was its save time.* `agent_runs.started_at` defaulted to
 the moment of the insert, which `record()` makes after the investigation, so every run took "0
 seconds". The investigator now notes when a run began and saves that. The page shows a duration
-only when there is one, because runs saved before the fix have none.
+only when there is one, because runs saved before the fix have none. (Corrected in chunk 15: the end time
+was still the database's `now()`, on another clock, so a run could end a fraction of a second
+before it began. Both times now come from the application.)
 
 **Decisions worth recording.** *The working file is for everyone who can read the queue,* auditors
 included: it shows what the agent saw and why it concluded, which is what an auditor needs. *The
@@ -2150,5 +2152,120 @@ What it does not prove:
   > that approves messages and never payments, and the Collections screen.
 
 **Plan.** Milestone 4, collections: arrears buckets and the collections policy.
+
+---
+
+## Chunk 15 — the drafting agent ✅
+
+_Date: 2026-10-12_
+
+**What & why.** _Metaphor: the clerk who writes the letters, and the rule book on the desk beside
+them._ The clerk is handed a folder for each late loan: who, how much, how late, what was said
+before, and what was promised. They write one letter per folder. Before the letter goes in the
+manager's tray, someone holds it against the rule book. A letter that breaks a rule goes back once,
+with the broken rules circled. If it still breaks one, it goes in the tray anyway, flagged, so the
+manager sees what went wrong rather than nothing at all.
+
+Chunk 14 wrote the rule book and the morning list. This chunk is the clerk:
+
+- **The folder is Repaydesk's work, not the model's.** `collections.drafter.gather` reads each
+  loan live: the arrears and days late from Fineract, the borrower's first name from the
+  directory, the last three messages, and the latest promise. A loan paid since the directory's
+  copy, or now over 90 days late, is skipped without asking the model anything.
+- **One call per loan, no tools.** Claude Sonnet 5.5 (`DRAFTER_MODEL`), low effort, with the policy
+  as its system prompt and a fixed answer shape: the message, and a one-line note to the manager on
+  why it's worded that way. The channel follows the bucket: WhatsApp for arrangement (room to talk
+  about a plan), SMS for the rest.
+- **Every draft goes through the policy's 11 checks.** A draft that fails is sent back once, with
+  each failed check and its detail. Whatever comes back is saved as a draft with its checks.
+- **A run per loan** in `agent_runs`, agent `collector`, outcome `drafted` or `failed` (migration
+  010 adds `drafted`), with the brief it was given, the note, the attempts, cost and trace. The
+  draft is in `collection_messages`, linked to its run, and the audit log has `message.drafted`.
+- **Agent runs shows both agents.** The list has a "drafted a message" filter, and a collector
+  row shows the amount due, the loan, the message and its status. A collector run's page shows
+  what it was told, the message with its note to the manager, the policy checks, and where the
+  message stands.
+- **`python scripts/dev.py draft`** (`--limit N`, `--bucket B`), a compose `draft` service that
+  shares the investigator's settings, and `make draft`.
+
+**Found on the way.** *A run could end before it began.* `agent_runs.finished_at` was the
+database's `now()`, which is the start of the transaction and comes from the database's clock;
+`started_at` came from the application's. A full test run caught a run of -0.0002 seconds. Both
+times now come from the application, for the investigator and the drafter. (Chunk 13's section
+is corrected to say so.) Whether this explains chunk 14's unreproduced failures I can't say: they
+weren't captured.
+
+**Decisions worth recording.**
+
+- *No tools for the drafter.* Everything it needs fits in a short brief, and Repaydesk can gather
+  it more reliably than a model can look it up. Fewer moving parts, a cheaper call, and nothing to
+  look up wrongly.
+- *One repair, not a loop.* A second failure says the case needs a person, not a third try.
+- *A failing draft is kept, not dropped.* The manager sees the loan was attempted and why it
+  failed; a silent gap on the list would look like nothing was due. Chunk 16's approval refuses a
+  draft that fails a check until a person edits it.
+- *The amount is the live arrears*, not the directory's copy, so a part-payment since the morning
+  copy is reflected in the message.
+
+**Principles.** _Same clerk-and-rule-book metaphor._ *Hand the clerk the folder; don't send them to
+the archive.* *Every letter is held against the rule book.* *One correction, then a person.* *A
+flagged letter in the tray beats a missing one.*
+
+**Files.**
+
+- New:
+  - `src/repaydesk/collections/drafter.py`, `collections/draft.py`;
+  - `migrations/010_drafter.sql`;
+  - `tests/test_drafter.py`.
+- Changed:
+  - `investigator.py` (the end time from the same clock);
+  - `views.py` (runs about a loan: the message, the loan, the agent);
+  - `tests/test_approvals.py`;
+  - `web/src/api.ts`, `pages/Runs.tsx`, `pages/Runs.test.tsx`;
+  - `compose.yaml`, `scripts/dev.py`, `Makefile`, `README.md`.
+
+**Depends on / blocks.** Depends on the policy, the morning list and the schema (chunk 14), and on
+the investigator's usage and cost accounting (chunk 11). Blocks chunk 16, where the manager
+approves, edits or rejects the drafts and the gateway sends them.
+
+**Verification.** `ruff` clean.
+
+- `pytest`: 135 passed, 4 new. All four drafter tests use a scripted model behind a mock transport:
+  no network, no key.
+  - **A good draft** is saved as a draft by `agent:collector` with the live amount due, the
+    bucket's channel and 11 passing checks. Its run is a `collector` run about the loan, with no
+    payment line. The request had no tools, and the brief named the loan, the first name and the
+    amount. The audit has `message.drafted`, and the loan leaves the morning list.
+  - **A draft that threatens the police** is sent back once. The repair request carries the
+    failed `no_threats` check with its detail, and the second draft passes.
+  - **A draft with the wrong amount twice** is saved with exactly one failed check, `amount_due`.
+  - **A paid loan** is skipped, and the model is never asked.
+- The gateway's tests: 30 passed with migration 010.
+- `vitest` 32 passed, 1 new: a collector run's page shows what it was told, the message, "2
+  drafts" with "repaired after failing a check", the policy result and the note to the manager,
+  and no lookups section. The runs list shows the collector row first, with "message draft". `tsc`
+  clean.
+- **On the stack:** the API applied migration 010, and `docker compose config` resolves the
+  `draft` service with the drafter's model and service name over the investigator's settings.
+
+What it does not prove:
+
+- **The drafter against the real model.** The API key's credit ran out in milestone 3, so no live
+  drafts yet. What Sonnet writes, how often it passes first time and what a draft costs are
+  unmeasured; the tests prove only the plumbing around the model.
+- **That the messages read well to a Nigerian borrower.** That's the manager's eye, and the policy
+  review, not a test.
+
+**PR package.**
+
+- Subject: `Chunk 15: the drafting agent: one message per late loan, checked against the policy`
+- Description:
+  > Adds the collections drafting agent: Claude Sonnet 5.5 drafts one message per loan on the
+  > morning list from facts Repaydesk gathers live, with no tools. Each draft runs through the
+  > policy's checks, gets one repair if it fails, and is saved as a draft for the portfolio manager
+  > with its checks; nothing is sent. Runs are recorded as `collector` runs and shown on Agent runs.
+  > Also takes a run's end time from the same clock as its start.
+
+**Plan.** Milestone 4, collections: the drafting agent under the written policy.
 
 ---

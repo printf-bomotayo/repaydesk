@@ -175,15 +175,20 @@ export interface LineDetail {
   trail: Omit<AuditRow, "subject">[];
 }
 
-export type RunOutcome = "proposed" | "excluded" | "suspense" | "failed";
+export type RunOutcome = "proposed" | "excluded" | "suspense" | "failed" | "drafted";
 
 export interface RunRow {
   id: number;
   started_at: string;
-  line_id: string;
+  /** "investigator" runs are about a payment line; "collector" runs about a loan, and draft a message. */
+  agent: string;
+  line_id: string | null;
+  loan_ref: string | null;
+  /** The payment's amount, or the amount due the message names. */
   amount_kobo: number;
+  /** The payment's narration, or the drafted message. */
   narration: string;
-  channel: Channel;
+  channel: Channel | MessageChannel | null;
   /** null: a person or rule placed the line while the agent worked; kept as history. */
   outcome: RunOutcome | null;
   confidence: number | null;
@@ -191,6 +196,7 @@ export interface RunRow {
   tool_calls: number;
   cost_usd: number;
   model: string;
+  /** The proposal's status, or the drafted message's. */
   proposal_status: string | null;
   error: string | null;
 }
@@ -224,14 +230,8 @@ export interface RunDetail {
   triage: { kind: string; names: string[]; business: string | null; group: string | null; paid_for: string | null; reference: string | null; language: string } | null;
   outcome: RunOutcome | null;
   confidence: number | null;
-  verdict: {
-    outcome: string;
-    allocations: { loan_ref: string; amount_kobo: number }[];
-    confidence: number;
-    reason: string;
-    findings: { fact: string; bearing: "for" | "against" | "neutral" }[];
-    candidates: string[];
-  } | null;
+  /** The investigator's verdict, or for a collector run the draft: body, note and attempts. */
+  verdict: InvestigatorVerdict | DrafterVerdict | null;
   checks: { check: string; ok: boolean; detail: string }[];
   proposal: { id: number; status: string; decisions: Omit<Decision, "limit_kobo">[] } | null;
   steps: RunStep[];
@@ -239,8 +239,38 @@ export interface RunDetail {
   cost_usd: number;
   error: string | null;
   trace_id: string | null;
-  line: { id: string; amount_kobo: number; narration: string; channel: Channel; value_date: string; payer_name: string | null; status: Status };
+  line: { id: string; amount_kobo: number; narration: string; channel: Channel; value_date: string; payer_name: string | null; status: Status } | null;
+  loan_ref: string | null;
+  message: {
+    id: number;
+    channel: MessageChannel;
+    body: string;
+    status: "draft" | "approved" | "rejected" | "sent" | "failed";
+    bucket: CollectionsBucket;
+    amount_due_kobo: number;
+    checks: { check: string; ok: boolean; detail: string }[];
+    decided_by: string | null;
+    reject_reason: string | null;
+  } | null;
 }
+
+export interface InvestigatorVerdict {
+  outcome: string;
+  allocations: { loan_ref: string; amount_kobo: number }[];
+  confidence: number;
+  reason: string;
+  findings: { fact: string; bearing: "for" | "against" | "neutral" }[];
+  candidates: string[];
+}
+
+export interface DrafterVerdict {
+  body: string;
+  note: string;
+  attempts: number;
+  brief: Record<string, unknown>;
+}
+
+export type MessageChannel = "sms" | "whatsapp";
 
 export type CollectionsBucket = "reminder" | "follow_up" | "arrangement" | "broken_promise";
 

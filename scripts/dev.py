@@ -10,6 +10,8 @@
     python scripts/dev.py match     propose matches for new lines by rule (certain cases only)
     python scripts/dev.py score     score the live proposals against the truth file
     python scripts/dev.py investigate   the investigator agent on open lines (--limit N, --line ID; uses the API key)
+    python scripts/dev.py draft     the collections agent drafts the morning's messages (--limit N, --bucket B;
+                                    uses the API key; sends nothing)
     python scripts/dev.py eval      the investigator's eval: 60 hard cases, dry, graded (--limit N; about $1.50)
     python scripts/dev.py demo      milestone 2 end to end: a new statement, matched, approved, posted, checked
                                     (--for-review: stop after matching; approve in the web app)
@@ -170,6 +172,10 @@ def main(task: str) -> None:
     elif task == "investigate":
         # The investigator agent; pass --limit N or --line ID. Needs ANTHROPIC_API_KEY in .env (costs money).
         run("docker", "compose", "run", "--rm", "--build", "investigate", "python", "-m", "repaydesk.investigate",
+            *sys.argv[2:])
+    elif task == "draft":
+        # The collections drafting agent; pass --limit N or --bucket B. Needs ANTHROPIC_API_KEY (costs money).
+        run("docker", "compose", "run", "--rm", "--build", "draft", "python", "-m", "repaydesk.collections.draft",
             *sys.argv[2:])
     elif task == "eval":
         # The investigator's eval: the fixed hard cases, run dry against the stack; report in evals/reports/.

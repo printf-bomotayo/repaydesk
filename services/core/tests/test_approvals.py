@@ -406,7 +406,8 @@ def test_an_investigation_reads_back_whole_with_what_people_decided_since(client
 
     page = c.get("/runs", headers=hadiza).json()
     assert [r["id"] for r in page["items"]] == [s["run_id"], m["run_id"]]  # newest first
-    assert page["counts"] == {"proposed": 1, "excluded": 0, "suspense": 1, "failed": 0} and page["all_runs"] == 2
+    assert page["counts"] == {"proposed": 1, "excluded": 0, "suspense": 1, "failed": 0, "drafted": 0}
+    assert page["all_runs"] == 2
     assert page["items"][1]["tool_calls"] == 1 and page["items"][1]["proposal_status"] == "pending"
     assert [r["id"] for r in c.get("/runs", headers=hadiza, params={"outcome": "suspense"}).json()["items"]] == [
         s["run_id"]]

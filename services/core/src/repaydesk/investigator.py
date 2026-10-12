@@ -329,8 +329,8 @@ def record(conn: psycopg.Connection, run: Run, line_amount: int, core: CoreBanki
         run_id = conn.execute(
             "INSERT INTO agent_runs (line_id, agent, started_at, finished_at, model, classifier_model, classification, "
             "outcome, confidence, verdict, checks, proposal_id, steps, usage, cost_usd, error, trace_id) "
-            "VALUES (%s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (run.line_id, AGENT, run.started, INVESTIGATOR_MODEL, CLASSIFIER_MODEL,
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (run.line_id, AGENT, run.started, datetime.now(UTC), INVESTIGATOR_MODEL, CLASSIFIER_MODEL,
              Jsonb(run.triage.model_dump()) if run.triage else None, outcome,
              round(min(max(v.confidence, 0), 1), 3) if v else None, Jsonb(v.model_dump()) if v else None,
              Jsonb(checks), proposal_id, Jsonb(run.steps), Jsonb(run.usage), run.cost_usd(), run.error, trace_id),

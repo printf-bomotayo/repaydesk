@@ -184,6 +184,13 @@ Built so far (milestone 1):
   Collections screen: who is due a message today, with promises to pay left alone until their
   date and broken ones first. A portfolio manager login (`ngozi`) approves messages, never
   payments.
+- **The drafting agent** (chunk 15): Claude Sonnet 5.5 drafts one message per loan on the morning
+  list, from facts Repaydesk gathers live (arrears and days late from Fineract, earlier messages,
+  promises), with no lookups of its own. Every draft goes through the policy's checks; one that
+  fails is repaired once with the failures named, and one that still fails is kept, marked, and
+  can't go until a person fixes it. Drafts wait for the portfolio manager; nothing is sent.
+  `python scripts/dev.py draft --limit 10` (needs `ANTHROPIC_API_KEY`). Each run shows on Agent
+  runs with what it was told, the message, and the checks.
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract

@@ -277,10 +277,11 @@ def today(conn: psycopg.Connection, two_person_above_kobo: int) -> dict:
     runs = conn.execute(
         "SELECT count(*), count(*) FILTER (WHERE outcome = 'proposed'), count(*) FILTER (WHERE outcome = 'suspense'), "
         "count(*) FILTER (WHERE outcome = 'failed'), coalesce(sum(cost_usd), 0) FROM agent_runs "
-        "WHERE started_at > now() - interval '7 days'").fetchone()
+        "WHERE agent = 'investigator' AND started_at > now() - interval '7 days'").fetchone()
     latest = conn.execute(
         "SELECT r.id, r.line_id, l.amount_kobo, l.narration, r.outcome, r.confidence, r.verdict->>'reason' "
-        "FROM agent_runs r JOIN payment_lines l ON l.id = r.line_id WHERE r.verdict IS NOT NULL "
+        "FROM agent_runs r JOIN payment_lines l ON l.id = r.line_id "
+        "WHERE r.verdict IS NOT NULL AND r.agent = 'investigator' "
         "ORDER BY r.id DESC LIMIT 1").fetchone()
 
     received = [v for k, v in by_status.items() if k != "duplicate"]
@@ -327,10 +328,13 @@ def today(conn: psycopg.Connection, two_person_above_kobo: int) -> dict:
 
 # ---- the investigator's runs (ADR 0009) -------------------------------------------------------
 
-RUN_OUTCOMES = ("proposed", "excluded", "suspense", "failed")
+RUN_OUTCOMES = ("proposed", "excluded", "suspense", "failed", "drafted")
 
+# A run is about a payment line (the investigator) or a loan (the drafting agent, whose answer is a message).
 _RUN_DECISION = """
+LEFT JOIN payment_lines l ON l.id = r.line_id
 LEFT JOIN proposals p ON p.id = r.proposal_id
+LEFT JOIN collection_messages m ON m.run_id = r.id
 """
 
 
@@ -338,18 +342,21 @@ def runs(conn: psycopg.Connection, outcome: str | None = None, limit: int = 50, 
     """Newest first: what each run looked at, what it concluded, and where its proposal stands now."""
     where, args = ("WHERE r.outcome = %(outcome)s", {"outcome": outcome}) if outcome else ("", {})
     rows = conn.execute(
-        f"SELECT r.id, r.started_at, r.line_id, l.amount_kobo, l.narration, l.channel, r.outcome, r.confidence, "
-        f"r.verdict->>'reason', jsonb_array_length(r.steps), r.cost_usd, r.model, p.status, r.error, "
-        f"count(*) OVER () FROM agent_runs r JOIN payment_lines l ON l.id = r.line_id {_RUN_DECISION} {where} "
+        f"SELECT r.id, r.started_at, r.line_id, coalesce(l.amount_kobo, m.amount_due_kobo, 0), "
+        f"coalesce(l.narration, m.body, r.loan_ref), coalesce(l.channel, m.channel), r.outcome, r.confidence, "
+        f"coalesce(r.verdict->>'reason', r.verdict->>'note'), jsonb_array_length(r.steps), r.cost_usd, r.model, "
+        f"coalesce(p.status, m.status), r.error, count(*) OVER (), r.agent, r.loan_ref "
+        f"FROM agent_runs r {_RUN_DECISION} {where} "
         f"ORDER BY r.id DESC LIMIT %(limit)s OFFSET %(offset)s", args | {"limit": limit, "offset": offset},
     ).fetchall()
-    counts = dict(conn.execute("SELECT coalesce(outcome, 'superseded'), count(*) FROM agent_runs GROUP BY 1"))
+    counts = dict(conn.execute(
+        "SELECT coalesce(outcome, 'superseded'), count(*) FROM agent_runs GROUP BY 1").fetchall())
     totals = conn.execute("SELECT count(*), coalesce(sum(cost_usd), 0) FROM agent_runs").fetchone()
     return {
         "items": [{"id": r[0], "started_at": _iso(r[1]), "line_id": r[2], "amount_kobo": r[3], "narration": r[4],
                    "channel": r[5], "outcome": r[6], "confidence": float(r[7]) if r[7] is not None else None,
                    "reason": r[8], "tool_calls": r[9], "cost_usd": float(r[10] or 0), "model": r[11],
-                   "proposal_status": r[12], "error": r[13]} for r in rows],
+                   "proposal_status": r[12], "error": r[13], "agent": r[15], "loan_ref": r[16]} for r in rows],
         "total": rows[0][14] if rows else 0,
         "counts": {o: counts.get(o, 0) for o in RUN_OUTCOMES},
         "all_runs": totals[0], "cost_usd": round(float(totals[1]), 4),
@@ -363,8 +370,9 @@ def run(conn: psycopg.Connection, run_id: int) -> dict | None:
     r = conn.execute(
         "SELECT r.id, r.started_at, r.finished_at, r.line_id, r.agent, r.model, r.classifier_model, r.classification, "
         "r.outcome, r.confidence, r.verdict, r.checks, r.proposal_id, r.steps, r.usage, r.cost_usd, r.error, "
-        "r.trace_id, l.amount_kobo, l.narration, l.channel, l.value_date, l.payer_name, l.status "
-        "FROM agent_runs r JOIN payment_lines l ON l.id = r.line_id WHERE r.id = %s", (run_id,),
+        "r.trace_id, l.amount_kobo, l.narration, l.channel, l.value_date, l.payer_name, l.status, r.loan_ref, "
+        "m.id, m.channel, m.body, m.status, m.bucket, m.amount_due_kobo, m.checks, m.decided_by, m.reject_reason "
+        f"FROM agent_runs r {_RUN_DECISION} WHERE r.id = %s", (run_id,),
     ).fetchone()
     if not r:
         return None
@@ -386,5 +394,9 @@ def run(conn: psycopg.Connection, run_id: int) -> dict | None:
         "proposal": proposal, "steps": r[13] or [], "usage": r[14] or {}, "cost_usd": float(r[15] or 0),
         "error": r[16], "trace_id": r[17],
         "line": {"id": r[3], "amount_kobo": r[18], "narration": r[19], "channel": r[20], "value_date": _iso(r[21]),
-                 "payer_name": r[22], "status": r[23]},
+                 "payer_name": r[22], "status": r[23]} if r[3] else None,
+        "loan_ref": r[24],
+        "message": {"id": r[25], "channel": r[26], "body": r[27], "status": r[28], "bucket": r[29],
+                    "amount_due_kobo": r[30], "checks": r[31] or [], "decided_by": r[32], "reject_reason": r[33]}
+        if r[25] else None,
     }
