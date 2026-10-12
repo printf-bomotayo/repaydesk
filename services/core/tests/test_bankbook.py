@@ -10,18 +10,12 @@ import psycopg
 import pytest
 from mcp.client.client import Client
 
-from repaydesk import directory
 from repaydesk.adapters.memory import MemoryLedger
 from repaydesk.adapters.ports import JournalEntry, JournalLine
-from repaydesk.adapters.statements import FolderStatementSource
-from repaydesk.bankbook import Bankbook, NotFound, read_only
-from repaydesk.ingest import ingest_folder
-from repaydesk.match import RuleMatcher, run
+from repaydesk.bankbook import NotFound
 from repaydesk.privacy import mask_account, mask_phone, mask_text, phones_in
 from repaydesk.servers import bankbook as bankbook_server
 from repaydesk.servers import ledger as ledger_server
-from tests.conftest import WEBHOOK_SECRET
-from tests.test_records import _core
 
 # ---- what a model may read -------------------------------------------------------------------
 
@@ -41,16 +35,6 @@ def test_phone_and_account_numbers_are_masked_and_words_kept():
 db_test = pytest.mark.db
 
 
-@pytest.fixture
-def book_and_data(conn, week_dir):
-    data, book = week_dir
-    core = _core(book)
-    directory.sync(conn, core)
-    ingest_folder(conn, FolderStatementSource(data / "inbox", WEBHOOK_SECRET))
-    run(conn, RuleMatcher(core, {x.virtual_account: x.ref for x in book.loans}.get))
-    return Bankbook(read_only(conn), core), book
-
-
 def _texts(result) -> str:
     return json.dumps(result)
 
@@ -59,8 +43,8 @@ PHONE_DIGITS = re.compile(r"(?<!\d)0[789][01]\d{8}(?!\d)")
 
 
 @db_test
-def test_names_are_found_misspelt_initialled_reordered_or_by_trading_name(book_and_data):
-    bk, book = book_and_data
+def test_names_are_found_misspelt_initialled_reordered_or_by_trading_name(placed_week):
+    bk, book = placed_week
     someone = next(b for b in book.borrowers if b.business_name)
     first, last = someone.first_name, someone.last_name
 
@@ -82,8 +66,8 @@ def test_names_are_found_misspelt_initialled_reordered_or_by_trading_name(book_a
 
 
 @db_test
-def test_a_phone_typed_at_a_terminal_finds_its_borrower_without_showing_the_number(book_and_data, conn):
-    bk, book = book_and_data
+def test_a_phone_typed_at_a_terminal_finds_its_borrower_without_showing_the_number(placed_week, conn):
+    bk, book = placed_week
     line_id, typed = conn.execute(
         "SELECT l.id, l.customer_reference FROM payment_lines l JOIN borrowers b ON b.phone = l.customer_reference "
         "WHERE l.channel = 'pos' ORDER BY l.id LIMIT 1").fetchone()
@@ -96,8 +80,8 @@ def test_a_phone_typed_at_a_terminal_finds_its_borrower_without_showing_the_numb
 
 
 @db_test
-def test_a_loan_is_read_live_with_the_amounts_that_would_fit(book_and_data):
-    bk, book = book_and_data
+def test_a_loan_is_read_live_with_the_amounts_that_would_fit(placed_week):
+    bk, book = placed_week
     loan = next(x for x in book.loans)
     got = bk.loan(loan.ref)
     assert got["read_live_from_core_banking"] and got["borrower_ref"] == loan.borrower_ref
@@ -109,8 +93,8 @@ def test_a_loan_is_read_live_with_the_amounts_that_would_fit(book_and_data):
 
 
 @db_test
-def test_history_shows_how_a_loan_was_paid_and_who_paid_it(book_and_data, conn):
-    bk, book = book_and_data
+def test_history_shows_how_a_loan_was_paid_and_who_paid_it(placed_week, conn):
+    bk, book = placed_week
     loan_ref, payer = conn.execute(
         "SELECT a->>'loan_ref', l.payer_name FROM proposals p JOIN payment_lines l ON l.id = p.line_id "
         "CROSS JOIN LATERAL jsonb_array_elements(p.allocations) a "
@@ -126,8 +110,8 @@ def test_history_shows_how_a_loan_was_paid_and_who_paid_it(book_and_data, conn):
 
 
 @db_test
-def test_the_session_refuses_writes(book_and_data):
-    bk, _ = book_and_data
+def test_the_session_refuses_writes(placed_week):
+    bk, _ = placed_week
     with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
         bk.conn.execute("DELETE FROM proposals")
 
@@ -136,8 +120,8 @@ def test_the_session_refuses_writes(book_and_data):
 
 
 @db_test
-def test_the_bankbook_server_offers_only_reads_and_says_what_it_couldnt_find(book_and_data):
-    bk, book = book_and_data
+def test_the_bankbook_server_offers_only_reads_and_says_what_it_couldnt_find(placed_week):
+    bk, book = placed_week
     server = bankbook_server.build(bk)
     someone = book.borrowers[0]
 

@@ -9,6 +9,7 @@
     python scripts/dev.py ingest    take in the week's statement files, then deliver its webhooks to the API
     python scripts/dev.py match     propose matches for new lines by rule (certain cases only)
     python scripts/dev.py score     score the live proposals against the truth file
+    python scripts/dev.py investigate   the investigator agent on open lines (--limit N, --line ID; uses the API key)
     python scripts/dev.py demo      milestone 2 end to end: a new statement, matched, approved, posted, checked
                                     (--for-review: stop after matching; approve in the web app)
     python scripts/dev.py directory copy the book from Fineract into the borrower directory now
@@ -165,6 +166,10 @@ def main(task: str) -> None:
             "--replay-webhooks", "http://api:8000")
     elif task == "match":
         run("docker", "compose", "run", "--rm", "--build", "match")
+    elif task == "investigate":
+        # The investigator agent; pass --limit N or --line ID. Needs ANTHROPIC_API_KEY in .env (costs money).
+        run("docker", "compose", "run", "--rm", "--build", "investigate", "python", "-m", "repaydesk.investigate",
+            *sys.argv[2:])
     elif task == "demo":
         run("docker", "compose", "run", "--rm", "--build", "demo", "python", "-m", "repaydesk.demo", *sys.argv[2:])
     elif task == "directory":

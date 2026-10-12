@@ -53,7 +53,7 @@ ingested and matched by rule, Amaka and Tunde approve through the API, the gatew
 demo finds each repayment in Fineract and each journal entry in Odoo. Then open **Today**.
 [`docs/demo.md`](docs/demo.md) is the same story to click through, for showing someone.
 
-Other tasks: `seed`, `ingest`, `match`, `score`, `demo`, `mcp`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
+Other tasks: `seed`, `ingest`, `match`, `score`, `investigate`, `demo`, `mcp`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
 and for the web app `web` (live reload on http://127.0.0.1:5173, needs Node 24) and `webtest`
 (`python scripts/dev.py <task>`).
 
@@ -157,6 +157,14 @@ Built so far (milestone 1):
   through a read-only Odoo login. Phone and account numbers reach a model masked; a tool that needs
   a whole phone number looks it up itself. Claude Code picks both up from `.mcp.json`;
   `python scripts/dev.py mcp` checks them. See [ADR 0008](docs/adr/0008-agent-data-access.md).
+- **The investigator agent** (chunk 11): for a payment no rule could place, Claude Haiku 5.5
+  triages the narration and Claude Sonnet 5.5 investigates through the bankbook MCP server, then
+  answers in a fixed shape: the loan or loans, its confidence, its reason, and each finding for or
+  against. Repaydesk checks the answer (amounts add up to the kobo, loans active, confidence over
+  the bar) before it becomes a proposal in the same review queue as a rule's; doubt becomes
+  suspense. Every run is kept, with each tool call and its cost (about 2.5 US cents a line).
+  `python scripts/dev.py investigate --limit 10` runs it (needs `ANTHROPIC_API_KEY`). See
+  [ADR 0009](docs/adr/0009-investigator-agent.md).
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract

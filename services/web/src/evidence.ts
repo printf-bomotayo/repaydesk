@@ -1,6 +1,7 @@
 // A proposal's evidence, as the reviewer reads it. Rules record what they checked as keys
 // (match.py); here each known key becomes a sentence, marked as agreeing, disagreeing or unknown.
-// Unknown keys are still shown, as they are, so nothing a proposer recorded is hidden.
+// The investigator agent records its reason and its findings, each for, against or neutral
+// (investigator.py). Unknown keys are still shown, as they are, so nothing a proposer recorded is hidden.
 
 export interface Check {
   /** true: agrees · false: disagrees · null: couldn't tell */
@@ -10,7 +11,22 @@ export interface Check {
 
 type Evidence = Record<string, unknown>;
 
-const KNOWN: Record<string, (v: unknown, e: Evidence) => Check | null> = {
+const BEARING: Record<string, boolean | null> = { for: true, against: false, neutral: null };
+
+const KNOWN: Record<string, (v: unknown, e: Evidence) => Check | Check[] | null> = {
+  // The agent's: its reason first, then each finding as it weighed it.
+  reason: (v) => ({ ok: null, text: String(v) }),
+  findings: (v) =>
+    (Array.isArray(v) ? v : []).map((f: { fact?: string; bearing?: string }) => ({
+      ok: BEARING[f.bearing ?? "neutral"] ?? null,
+      text: String(f.fact ?? ""),
+    })),
+  also_considered: (v) => {
+    const others = Array.isArray(v) ? (v as string[]) : [];
+    return others.length ? { ok: null, text: `Also considered: ${others.join(", ")}` } : null;
+  },
+  // The run's id links to the agent's run on the case file; it isn't evidence in itself.
+  run_id: () => null,
   virtual_account: (v) => ({ ok: true, text: `Paid into ${v}, the loan's own virtual account` }),
   loan_status: (v) => ({ ok: v === "active", text: `The loan is ${v}` }),
   quoted_reference: (v) => ({ ok: true, text: `Quotes ${v}, a loan that exists` }),
@@ -39,6 +55,6 @@ export function evidenceChecks(evidence: Evidence | null | undefined): Check[] {
   return Object.entries(evidence).flatMap(([key, value]) => {
     const known = KNOWN[key];
     const check = known ? known(value, evidence) : { ok: null, text: `${key.replace(/_/g, " ")}: ${JSON.stringify(value)}` };
-    return check ? [check] : [];
+    return check === null ? [] : Array.isArray(check) ? check : [check];
   });
 }

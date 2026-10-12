@@ -1508,3 +1508,154 @@ What it does not prove:
 **Plan.** Milestone 3, investigator agent, MCP and evals: the read-only MCP servers.
 
 ---
+
+## Chunk 11 — the investigator agent ✅
+
+_Date: 2026-10-12_
+
+**What & why.** _Metaphor: the senior officer's desk, and the supervisor's tray._ A payment
+nobody can place goes to a senior officer, who pulls files at the records window, weighs what they
+show and writes a short note:
+- "Ifeoma Pharmacy is two customers, but only the Onitsha one owes ₦605,000; no history to
+  confirm; fairly sure."
+- or "two Afolabis at Ibadan, same amount; I can't tell. Phone the branch."
+
+The note goes in the supervisor's tray. The officer never posts anything, and the supervisor reads
+the note before signing.
+
+This chunk adds the officer, for the lines rules leave behind:
+
+- **Triage**, by Claude Haiku 5.5: what kind of payment the narration describes. A person, a
+  business, a group, someone paying for someone else, a reference, Pidgin.
+- **Investigation**, by Claude Sonnet 5.5, through the bankbook MCP server's read-only lookups
+  (chunk 10) and nothing else. It answers in a fixed shape:
+  - a match (one loan or a split), not a repayment, or suspense;
+  - allocations in kobo;
+  - a confidence and a reason for the reviewer;
+  - its findings, each for, against or neutral;
+  - the candidates it considered.
+- **Repaydesk's checks**, before anything is saved:
+  - the amounts add up to the payment to the kobo;
+  - every loan is active in core banking, read live;
+  - no loan appears twice;
+  - the confidence clears 0.7.
+
+  A failed check turns the answer into suspense, with the reason recorded.
+- **A proposal for people**, by `agent:investigator`, in the same review queue as a rule's, under
+  the same limits and two-person rule. The review card shows the agent's reason first, then its
+  findings marked ✓ for, ✕ against or – neutral, then what else it considered.
+- **Every run kept** in `agent_runs` (migration 008): the triage, each tool call and what came
+  back, the answer, the checks, tokens per model and cost. `python scripts/dev.py investigate`
+  runs it.
+
+**Decisions worth recording.** [ADR 0009](docs/adr/0009-investigator-agent.md), and the user's
+choices on 12 October:
+
+- *The Anthropic SDK's tool runner, not the Claude Agent SDK.* The plan named the Agent SDK. The
+  investigator needs exactly eight read-only tools; the Agent SDK brings Claude Code's file, shell
+  and web tools to switch off, and a runtime in the container. The tool runner loops over the
+  bankbook's tools, converted from MCP with the SDK's helpers, and runs unchanged on Bedrock.
+- *Haiku 5.5 for triage*, not Haiku 4.5 as planned: the current Haiku, at a tenth of the price.
+- *Prompted for doubt.* The prompt describes how payments arrive here and how to weigh them. The
+  amount and the payer's history are strong evidence; a common name alone is weak. Two equal fits
+  mean suspense, because a wrong match moves someone else's money, and suspense costs a phone call.
+- *Answers are checked, never trusted.* The structured answer is validated by Repaydesk's own code
+  against core banking before it becomes anything.
+- *A failed run changes nothing.* An outage or a refusal is recorded on the run, and the line stays
+  open for the next attempt. On the Claude API, requests carry server-side fallbacks, so a declined
+  request is rerun on a fallback model in the same call.
+- *The key.* The Automation Hub's Claude API key, copied into Repaydesk's git-ignored `.env`
+  without being printed (the user's choice).
+
+**Found on the way.** The `anthropic[mcp]` extra wouldn't resolve beside MCP 2.x, but nothing in
+it is needed: the SDK's MCP helpers work with the 2.x client as installed.
+
+**Principles.** _Same officer-and-tray metaphor._ *The officer writes a note; the supervisor
+signs*: an agent proposes, a person decides. *Show your working*: every lookup, finding and
+check is on the run. *When in doubt, phone the branch*: suspense is a good answer. *Check the
+arithmetic yourself*: amounts and loan states are verified by code, not by the model's word.
+
+**Files.**
+
+- New:
+  - `src/repaydesk/investigator.py`, `investigate.py`;
+  - `migrations/008_agent_runs.sql`;
+  - `tests/test_investigator.py`;
+  - `docs/adr/0009-investigator-agent.md`.
+- Changed:
+  - `tests/conftest.py`: the book-in-core-banking helper and a `placed_week` fixture, shared;
+  - `tests/test_records.py`, `tests/test_bankbook.py`: use them;
+  - `web/src/evidence.ts` and `evidence.test.ts`: an agent's reason and findings in the review
+    queue;
+  - `pyproject.toml` (`anthropic`), `compose.yaml` (`investigate`), `.env.example`,
+    `scripts/dev.py` and `Makefile` (`investigate`), `README.md`.
+
+**Depends on / blocks.** Depends on chunk 10 (the MCP servers) and chunks 4 and 6 (proposals and
+the review queue). Blocks chunk 12: the eval set and its report, which measure this agent. Also
+blocks chunk 13, the Agent runs screen.
+
+**Verification.** `ruff` clean. `pytest`: 116 passed, 4 new, without network or a key.
+
+- Repaydesk's checks: a kobo out, a loan listed twice, an unknown loan, no allocations, confidence
+  at 0.69, and a doubtful "not a repayment" each become suspense. A good match becomes a match; a
+  confident "not a repayment" becomes an exclusion.
+- A recorded match is a pending proposal by `agent:investigator`, with the run's id in its
+  evidence. The line is "proposed" and nothing is in the posting outbox. The run holds its steps
+  and cost ($0.003 for 1,000 tokens in and 100 out), and the audit names the agent.
+- Suspense marks the line. A failed run leaves the line open, with the error. An answer for a line
+  a rule or person placed meanwhile is kept as history only.
+- One whole investigation against a scripted model (a stub HTTP transport, no network), through
+  the real tool runner and the real MCP server:
+  - the triage goes to Haiku, the investigation to Sonnet;
+  - the investigator is offered the bankbook's eight tools and nothing else;
+  - requests carry fallbacks and effort `medium`;
+  - the search result reaching the model holds the right loan;
+  - the run records the step and tokens per model.
+
+`vitest`: 28 passed, one new. `tsc` clean. The gateway's 30 pass with migration 008.
+
+On the running stack, with the real models:
+
+- **"TRF FROM IFEOMA PHARMACY", ₦605,000.**
+  - **The lookups.** Two of them, in parallel: a search for the trading name and earlier payments
+    under it.
+  - **Proposed.** LN-2026-000717 at 0.85. The reason: two borrowers trade as Ifeoma Pharmacy, and
+    only the Onitsha one owes exactly ₦605,000.
+  - **Flagged.** A third borrower whose arrears are also ₦605,000 but whose trading name doesn't
+    fit (Iya Ifeoma Foods), as neutral evidence.
+  - **Noted.** No payment history, which is why it held back from 0.9.
+  - **Checks.** All five passed.
+  - **Cost.** 2.6 cents.
+- **Fourteen more lines**, 12 locally and 2 in the `investigate` container: all proposed, at
+  confidence 0.72 to 0.93.
+- **Scored against the truth file:** 15 proposed, 15 correct, 0 wrong. They included names only,
+  trading names, mistyped cash references and a POS reference.
+- **Cost:** 15 runs for $0.37 in all, about 2.5 cents each.
+
+What it does not prove:
+
+- **Doubt.** All 15 were the oldest open lines, and none called for suspense. The unresolvable
+  cases (the blank POS lines, two equal Afolabis), groups and splits weren't drawn. Chunk 12's eval
+  set picks the hard cases on purpose, suspense-worthy ones included.
+- **A person approving an agent's proposal.** The review queue shows the findings (tested in
+  vitest), but no live approval was made in this chunk. The approval path is the same as a rule's.
+- **Bedrock.** The client is written from the SDK's documented `AsyncAnthropicBedrockMantle`, but
+  it hasn't been run against Bedrock.
+- **A changed line** under an agent: the "superseded" path is tested against a scripted model,
+  not seen live.
+
+**PR package.**
+
+- Subject: `Chunk 11: the investigator agent (Haiku triage, Sonnet investigation, checked answers)`
+- Description:
+  > Adds the investigator agent for payments no rule could place. Claude Haiku 5.5 triages the
+  > narration; Claude Sonnet 5.5 investigates through the bankbook MCP server's read-only tools (the
+  > Anthropic SDK's tool runner, not the Claude Agent SDK), and answers in a fixed shape. Repaydesk
+  > checks the answer (amounts add up, loans active, confidence over 0.7) before it becomes a
+  > proposal in the review queue, under the same approval rules as a rule's; doubt becomes
+  > suspense. Every run is recorded with its tool calls, checks and cost. On the live stack, 15
+  > lines investigated, 15 correct, about 2.5 cents each. ADR 0009.
+
+**Plan.** Milestone 3, investigator agent, MCP and evals: the investigator on the Claude models.
+
+---

@@ -8,13 +8,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from repaydesk import approvals, directory, records, staff
-from repaydesk.adapters.memory import MemoryCoreBanking
 from repaydesk.adapters.statements import FolderStatementSource
 from repaydesk.ingest import ingest_folder
 from repaydesk.match import RuleMatcher, run
 from repaydesk.staff import LIMITS, Staff
-from repaydesk.synth.names import BRANCHES, PRODUCTS
-from tests.conftest import WEBHOOK_SECRET
+from repaydesk.synth.names import BRANCHES
+from tests.conftest import WEBHOOK_SECRET, _core
 
 pytestmark = pytest.mark.db
 
@@ -22,20 +21,6 @@ PASSWORD = "test-staff-password"
 AS_OF = date(2026, 10, 8)
 BRANCH_NAMES = {b.code: b.name for b, _ in BRANCHES}
 AMAKA = Staff("amaka", "Amaka Nwosu", "officer", LIMITS["officer"])
-
-
-def _core(book) -> MemoryCoreBanking:
-    core = MemoryCoreBanking(AS_OF)
-    core.ensure_setup([b for b, _ in BRANCHES], PRODUCTS)
-    for b in book.borrowers:
-        core.create_borrower(b)
-    for g in book.groups:
-        core.create_group(g)
-    for loan in book.loans:
-        core.create_loan(loan)
-    for r in book.history:
-        core.post_repayment(r.loan_ref, r.paid_on, r.amount, r.reference, channel=r.channel)
-    return core
 
 
 @pytest.fixture

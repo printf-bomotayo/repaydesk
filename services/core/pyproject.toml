@@ -15,6 +15,7 @@ dependencies = [
   "uvicorn>=0.30",
   "tzdata>=2024.1",  # zoneinfo on Windows and slim images
   "mcp>=2.2,<3",  # the bankbook and ledger MCP servers (2.x: MCPServer, not FastMCP)
+  "anthropic>=1.9,<2",  # the investigator agent (tool runner, structured outputs)
 ]
 
 [project.optional-dependencies]

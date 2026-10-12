@@ -338,6 +338,32 @@ services:
       ODOO_READ_USERNAME: ${ODOO_READ_USERNAME:-repaydesk-read}
       ODOO_READ_PASSWORD: ${ODOO_READ_PASSWORD:?set ODOO_READ_PASSWORD in .env}
 
+  # One-shot: the investigator agent over payments no rule could place (ADR 0009). Reads through the
+  # bankbook MCP server; writes agent runs, proposals for people to review, and suspense.
+  investigate:
+    build: ./services/core
+    profiles: ["tools"]
+    command: ["python", "-m", "repaydesk.investigate"]
+    depends_on:
+      db:
+        condition: service_healthy
+      fineract:
+        condition: service_healthy
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: repaydesk-investigator
+      REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
+      FINERACT_URL: http://fineract:8080/fineract-provider/api/v1
+      FINERACT_TENANT: default
+      FINERACT_USERNAME: ${FINERACT_READ_USERNAME:-repaydesk-read}
+      FINERACT_PASSWORD: ${FINERACT_READ_PASSWORD:?set FINERACT_READ_PASSWORD in .env}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AWS_REGION: ${AWS_REGION:-}
+      INVESTIGATOR_MODEL: ${INVESTIGATOR_MODEL:-claude-sonnet-5-5}
+      CLASSIFIER_MODEL: ${CLASSIFIER_MODEL:-claude-haiku-5-5}
+      AGENT_MIN_CONFIDENCE: ${AGENT_MIN_CONFIDENCE:-0.7}
+
   # One-shot: milestone 2's demo. A new statement arrives, is ingested and matched, Amaka and Tunde
   # approve through the API, and the gateway posts; then it checks Fineract and Odoo themselves.
   demo:
