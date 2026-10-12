@@ -10,7 +10,7 @@ export const CHANNELS: Channel[] = ["bank_csv", "bank_mt940", "virtual_account",
 export interface Staff {
   id: string;
   name: string;
-  role: "officer" | "supervisor" | "auditor";
+  role: "officer" | "supervisor" | "auditor" | "manager";
   limit_kobo: number;
 }
 
@@ -240,6 +240,34 @@ export interface RunDetail {
   error: string | null;
   trace_id: string | null;
   line: { id: string; amount_kobo: number; narration: string; channel: Channel; value_date: string; payer_name: string | null; status: Status };
+}
+
+export type CollectionsBucket = "reminder" | "follow_up" | "arrangement" | "broken_promise";
+
+export interface CollectionsMorning {
+  as_of: string;
+  directory_copied_at: string | null;
+  buckets: { bucket: string; label: string; days: string; loans: number; arrears_kobo: number }[];
+  due: {
+    total: number;
+    items: {
+      loan_ref: string;
+      borrower_ref: string;
+      borrower_name: string;
+      branch_name: string | null;
+      days_late: number;
+      arrears_kobo: number;
+      outstanding_kobo: number;
+      bucket: CollectionsBucket;
+      bucket_label: string;
+      last_sent_at: string | null;
+      promise: { status: string; due_on: string; amount_kobo: number } | null;
+    }[];
+    limit: number;
+    offset: number;
+  };
+  drafts_waiting: number;
+  promises: Record<"open" | "kept" | "broken" | "cancelled", number>;
 }
 
 export interface CoreTransaction {
@@ -548,6 +576,8 @@ export const api = {
     request<LoanPage>("GET", "/loans", { query }),
   loan: (ref: string) => request<LoanRecord>("GET", `/loans/${encodeURIComponent(ref)}`),
   find: (q: string) => request<Found>("GET", "/find", { query: { q } }),
+  collections: (query: { bucket?: string; limit?: number; offset?: number }) =>
+    request<CollectionsMorning>("GET", "/collections", { query }),
   runs: (query: { outcome?: string; limit?: number; offset?: number }) => request<RunPage>("GET", "/runs", { query }),
   run: (id: number | string) => request<RunDetail>("GET", `/runs/${id}`),
   audit: (query: { actor?: string; action?: string; subject?: string; before?: number | null; limit?: number }) =>

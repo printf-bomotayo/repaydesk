@@ -69,8 +69,8 @@ def approvals_needed(amount_kobo: int) -> int:
 def judge(staff: Staff, amount_kobo: int, prior: list[Prior]) -> Verdict:
     """Whether `staff` may approve now, given the approvals already given. No database: the web app
     shows the same answer before anyone clicks."""
-    if staff.read_only:
-        return Verdict(False, code="read_only", message="Auditors can see the queue but not decide.")
+    if not staff.decides_payments:
+        return Verdict(False, code="read_only", message=staff.cannot_decide_payments())
     if any(p.staff_id == staff.id for p in prior):
         return Verdict(False, code="same_person",
                        message="You've approved this already. Someone else gives the second approval.")
@@ -157,8 +157,8 @@ def approve(conn: psycopg.Connection, proposal_id: int, staff: Staff) -> Outcome
 
 def reject(conn: psycopg.Connection, proposal_id: int, staff: Staff, reason: str) -> Outcome:
     reason = (reason or "").strip()
-    if staff.read_only:
-        raise Refused("read_only", "Auditors can see the queue but not decide.")
+    if not staff.decides_payments:
+        raise Refused("read_only", staff.cannot_decide_payments())
     if not reason:
         raise Refused("reason_required", "Say why, so whoever looks next starts from your reason.")
     with conn.transaction():
@@ -186,8 +186,8 @@ def retry_posting(conn: psycopg.Connection, outbox_id: int, staff: Staff) -> Out
     changes: the gateway rechecks it, and the idempotency key keeps anything already posted from
     posting twice. A posting the gateway refused, because the decisions don't support it, isn't
     retried: the same decisions would be refused again."""
-    if staff.read_only:
-        raise Refused("read_only", "Auditors can see postings but not retry them.")
+    if not staff.decides_payments:
+        raise Refused("read_only", "Only officers and supervisors send a posting back.")
     with conn.transaction():
         row = conn.execute(
             "SELECT o.proposal_id, o.line_id, o.status, o.attempts, o.last_error, "

@@ -9,6 +9,7 @@ const DEMO = [
   { id: "kunle", label: "Kunle Adebayo · officer, up to ₦500,000" },
   { id: "tunde", label: "Tunde Bakare · supervisor, up to ₦5,000,000" },
   { id: "hadiza", label: "Hadiza Lawal · auditor, read only" },
+  { id: "ngozi", label: "Ngozi Eze · portfolio manager, collections" },
 ];
 
 export function SignIn() {

@@ -39,7 +39,7 @@ collection journals in Odoo, and writes a week of incoming payments to `data/inb
 
 | What | Where |
 |---|---|
-| **Repaydesk** | http://127.0.0.1:18082 (sign in as `amaka` or `kunle`, officers; `tunde`, supervisor; `hadiza`, auditor; password `STAFF_DEMO_PASSWORD` in `.env`) |
+| **Repaydesk** | http://127.0.0.1:18082 (sign in as `amaka` or `kunle`, officers; `tunde`, supervisor; `hadiza`, auditor; `ngozi`, portfolio manager; password `STAFF_DEMO_PASSWORD` in `.env`) |
 | Fineract API | http://127.0.0.1:18080/fineract-provider/api/v1 (tenant `default`); Swagger at `/fineract-provider/swagger-ui/index.html` |
 | Fineract staff screens | http://127.0.0.1:18081 (Mifos X web app; login `mifos` / `password`, tenant `default`) |
 | Odoo ledger | http://127.0.0.1:18069 (database `ledger`, login `admin` / `admin`; Invoicing → Accounting → Journal Entries) |
@@ -178,6 +178,12 @@ Built so far (milestone 1):
   what came back, the answer with its findings for and against, Repaydesk's checks, the cost, and
   what people have decided about its proposal since. Linked from Today's note, from the review
   card ("How it decided") and from the payment's case file.
+- **Collections, foundations** (chunk 14): a written [collections policy](docs/collections-policy.md)
+  (who is contacted, when, how often, what a message must and must never say), its checkable rules
+  in code, arrears buckets (reminder, follow-up, arrangement, and recovery for people), and the
+  Collections screen: who is due a message today, with promises to pay left alone until their
+  date and broken ones first. A portfolio manager login (`ngozi`) approves messages, never
+  payments.
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract

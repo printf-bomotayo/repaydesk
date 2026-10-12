@@ -3,6 +3,7 @@ import { Shell } from "./components/Shell";
 import { Loading, ToastProvider } from "./components/common";
 import { Review } from "./pages/Review";
 import { Audit } from "./pages/Audit";
+import { Collections } from "./pages/Collections";
 import { BorrowerDetail, Borrowers } from "./pages/Borrowers";
 import { Ingestion } from "./pages/Ingestion";
 import { Later } from "./pages/Later";
@@ -14,7 +15,7 @@ import { SignIn } from "./pages/SignIn";
 import { Today } from "./pages/Today";
 import { SessionProvider, useSession } from "./session";
 
-const LATER = ["/collections", "/measures"];
+const LATER = ["/measures"];
 
 function Routed() {
   const { staff, checking } = useSession();
@@ -33,6 +34,7 @@ function Routed() {
         <Route path="/loans" element={<Loans />} />
         <Route path="/loans/:ref" element={<LoanDetail />} />
         <Route path="/ingestion" element={<Ingestion />} />
+        <Route path="/collections" element={<Collections />} />
         <Route path="/runs" element={<Runs />} />
         <Route path="/runs/:id" element={<RunPage />} />
         <Route path="/audit" element={<Audit />} />

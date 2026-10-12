@@ -421,3 +421,15 @@ def test_an_investigation_reads_back_whole_with_what_people_decided_since(client
     assert after["status"] == "approved" and after["decisions"][0]["name"] == "Tunde Bakare"
     assert c.get("/runs/999999", headers=hadiza).status_code == 404
     assert c.get("/runs").status_code == 401
+
+
+@pytest.mark.db
+def test_the_collections_morning_needs_a_signed_in_person_and_a_known_bucket(client):
+    c, _ = client
+    assert c.get("/collections").status_code == 401
+    ngozi = _as(c, "ngozi")
+    morning = c.get("/collections", headers=ngozi).json()
+    assert [b["bucket"] for b in morning["buckets"]] == ["reminder", "follow_up", "arrangement", "recovery"]
+    assert morning["due"]["items"] == [] and morning["drafts_waiting"] == 0
+    assert c.get("/collections", headers=ngozi, params={"bucket": "recovery"}).status_code == 422
+    assert c.get("/me", headers=ngozi).json()["role"] == "manager"

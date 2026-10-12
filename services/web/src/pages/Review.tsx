@@ -39,7 +39,7 @@ export function Review() {
   }
 
   if (!staff) return null;
-  const readOnly = staff.role === "auditor";
+  const readOnly = !["officer", "supervisor"].includes(staff.role);
 
   return (
     <>

@@ -24,6 +24,7 @@ export const AREAS: { label: string; areas: Area[] }[] = [
     areas: [
       { to: "/today", label: "Today", count: (s) => s.failed_postings, alert: true },
       { to: "/review", label: "Review queue", count: (s) => s.pending_proposals },
+      { to: "/collections", label: "Collections" },
       { to: "/payments", label: "Payments", count: (s) => Object.values(s.lines).reduce((a, b) => a + b, 0) - s.lines.duplicate },
     ],
   },
@@ -38,7 +39,6 @@ export const AREAS: { label: string; areas: Area[] }[] = [
   {
     label: "Later",
     areas: [
-      { to: "/collections", label: "Collections", later: "milestone 4" },
       { to: "/measures", label: "Measures", later: "milestone 5" },
     ],
   },
@@ -58,7 +58,7 @@ function count(a: Area, summary: Summary | null): number | null {
   return n;
 }
 
-const ROLE: Record<string, string> = { officer: "Officer", supervisor: "Supervisor", auditor: "Auditor, read only" };
+const ROLE: Record<string, string> = { officer: "Officer", supervisor: "Supervisor", auditor: "Auditor, read only", manager: "Portfolio manager" };
 
 function initials(name: string): string {
   return name

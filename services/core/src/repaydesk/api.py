@@ -341,6 +341,17 @@ def get_run(run_id: int, who: Me) -> dict:
     return found
 
 
+@app.get("/collections")
+def collections_morning(who: Me, bucket: str | None = None, limit: int = 50, offset: int = 0) -> dict:
+    from repaydesk.collections import queue
+    from repaydesk.domain import bank_today
+
+    if bucket and bucket not in ("reminder", "follow_up", "arrangement", "broken_promise"):
+        raise HTTPException(422, "bucket is one of reminder, follow_up, arrangement, broken_promise")
+    with app.state.pool.connection() as conn:
+        return queue.overview(conn, bank_today(), bucket, min(max(limit, 1), 200), max(offset, 0))
+
+
 @app.get("/ingestion")
 def ingestion(who: Me) -> dict:
     with app.state.pool.connection() as conn:

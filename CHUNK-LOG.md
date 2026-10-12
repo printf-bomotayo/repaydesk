@@ -2040,3 +2040,115 @@ What it does not prove:
 complete.
 
 ---
+
+## Chunk 14 — collections foundations ✅
+
+_Date: 2026-10-12_
+
+**What & why.** _Metaphor: the credit officer's rule book and morning list._ Before anyone at a
+microfinance bank picks up a phone about a late loan, two things exist:
+- **A rule book:** who may be called, when, how often, what must be said, and what must never be
+  said.
+- **A morning list:** the late loans, sorted by how late. Anyone who has promised to pay is left
+  alone until their date, and anyone who broke a promise is on top.
+
+Milestone 4 asks late borrowers to pay with drafted messages a person approves. This chunk writes
+the rule book and the list, before any message:
+
+- **The policy**, [`docs/collections-policy.md`](docs/collections-policy.md):
+  - only the borrower is contacted, between 08:00 and 18:00, Monday to Saturday;
+  - at most two messages per loan in seven days;
+  - every message names the loan, the exact amount due, how to pay, and an offer to talk;
+  - never threats, shame, links, or a request for a PIN or BVN;
+  - tone by how late the loan is;
+  - over 90 days goes to people, not messages.
+- **Its checkable rules in code**, `repaydesk.collections.policy`: eleven checks every draft will
+  pass through, from scope and frequency to the amount written in the message (₦60,500, N60,500.00,
+  NGN 60500 and "60,500 naira" all count).
+- **Arrears buckets and the morning list**, `repaydesk.collections.queue`. A loan is due a message
+  when it is 1 to 90 days late with arrears, has no promise still in date, no draft waiting, and
+  fewer than two messages this week. Broken promises come first.
+- **The schema** (migration 009): `collection_messages` (draft, approved, rejected, sent, failed),
+  `inbound_messages` (replies), and `promises` (open, kept, broken, cancelled). An agent run can now
+  be about a loan, not only a payment line, for the drafting agent.
+- **A portfolio manager**, Ngozi Eze (`ngozi`): approves collections messages and never payments,
+  not even a first approval. Supervisors may do both. Payment decisions now check "decides
+  payments" (officers and supervisors) rather than "isn't an auditor".
+- **The Collections screen** (`/collections`, `GET /collections`):
+  - the four buckets as tiles, with recovery in coral because it's for people;
+  - drafts waiting and promises open, kept and broken;
+  - the list of who is due a message today, filtered by kind.
+
+**Decisions worth recording.**
+
+- *A bank's own policy, stated as such.* It is written to be firm and fair. A real bank would align
+  it with its regulator's rules on debt recovery; the document says so rather than citing rules it
+  can't vouch for.
+- *Checks for what code can judge; people for the rest.* Code checks the amount, the reference,
+  the hours, the frequency, threats and links. Tone and the offer to talk are the agent's
+  instructions and the manager's eye.
+- *A promise is respected.* A loan with an open promise isn't messaged before the promised date.
+- *Approval for messages is a separate right.* An auditor and a portfolio manager both have no
+  payment limit, but only the manager (and a supervisor) approves messages.
+
+**Principles.** _Same rule-book metaphor._ *Write the rules before the first word is sent.*
+*Respect a promise until its date.* *The latest are people's work*: over 90 days, no drafted
+messages. *A right per action*: approving money and approving words are different jobs.
+
+**Files.**
+
+- New:
+  - `docs/collections-policy.md`;
+  - `src/repaydesk/collections/` (`__init__.py`, `policy.py`, `queue.py`);
+  - `migrations/009_collections.sql`;
+  - `tests/test_collections.py`;
+  - `web/src/pages/Collections.tsx`, `Collections.test.tsx`.
+- Changed:
+  - `staff.py` (the manager role, `decides_payments`, `decides_messages`), `approvals.py`;
+  - `api.py` (`GET /collections`);
+  - `tests/test_approvals.py`;
+  - `web/src/api.ts`, `App.tsx`, `components/Shell.tsx`, `components/RetryPosting.tsx`,
+    `pages/Review.tsx`, `SignIn.tsx`, `Later.tsx`;
+  - `README.md`.
+
+**Depends on / blocks.** Depends on the directory (chunk 7) and agent runs (chunk 11). Blocks
+chunk 15, the drafting agent, which writes the drafts this list asks for.
+
+**Verification.** `ruff` clean.
+
+- `pytest`: 131 passed, 8 new.
+  - **The policy:** a good message passes all 11 checks. Police, "your family", a BVN, a link,
+    capitals and two exclamation marks are each caught alone. A wrong amount, a missing reference
+    or a missing name fail, and four ways of writing the amount pass.
+  - **Scope and timing:** over 90 days is out of scope, a third message in a week fails, a promise
+    still in date blocks, and a lapsed one doesn't. Contact hours hold, and Sunday rolls to Monday
+    08:00.
+  - **The morning list:** a promised loan, a loan with a draft waiting and a twice-messaged loan
+    are left out. A broken promise comes first, as its own kind.
+  - **The manager:** can't approve a payment. The API serves the manager's morning, and refuses
+    an unknown bucket and a missing token.
+- The gateway's 30 tests pass with migration 009.
+- `vitest` 31 passed, 1 new: the buckets, the broken promise first, the manager's role in the
+  account panel, and the kind filter. `tsc` clean.
+- **On the stack:** the API applied migration 009 and created Ngozi as a manager.
+
+What it does not prove:
+
+- **The Collections screen live.** The user was browsing in the signed-in tab, so I didn't take
+  it over; the screen is covered by its test.
+- **One test run had 7 failures** I couldn't reproduce in two further full runs, and didn't
+  capture. CI will run the suite again; if it recurs, it gets diagnosed.
+- **The bank's policy against a regulator's rules.** It is the demo bank's own.
+
+**PR package.**
+
+- Subject: `Chunk 14: collections foundations: the policy, its checks, buckets and the morning list`
+- Description:
+  > Adds the collections policy (docs/collections-policy.md) and its checkable rules in code, the
+  > arrears buckets, and the morning list of loans due a message (promises respected, broken ones
+  > first), with the schema for messages, replies and promises to pay. Adds a portfolio manager role
+  > that approves messages and never payments, and the Collections screen.
+
+**Plan.** Milestone 4, collections: arrears buckets and the collections policy.
+
+---

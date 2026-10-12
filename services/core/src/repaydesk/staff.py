@@ -21,7 +21,7 @@ import psycopg
 TOKEN_HOURS = 8
 
 # Approval limits in kobo. The two-person threshold lives in approvals.py.
-LIMITS = {"officer": 50_000_000, "supervisor": 500_000_000, "auditor": 0}  # ₦500,000 · ₦5,000,000 · none
+LIMITS = {"officer": 50_000_000, "supervisor": 500_000_000, "auditor": 0, "manager": 0}  # ₦500k · ₦5m · none · none
 
 # The demo bank's reviewers. Names are synthetic, like everything else in the book.
 DEMO_STAFF = [
@@ -29,6 +29,7 @@ DEMO_STAFF = [
     ("kunle", "Kunle Adebayo", "officer"),
     ("tunde", "Tunde Bakare", "supervisor"),
     ("hadiza", "Hadiza Lawal", "auditor"),
+    ("ngozi", "Ngozi Eze", "manager"),  # portfolio manager: approves collections messages, not payments
 ]
 
 
@@ -42,6 +43,20 @@ class Staff:
     @property
     def read_only(self) -> bool:
         return self.role == "auditor"
+
+    @property
+    def decides_payments(self) -> bool:
+        """Officers and supervisors approve payments; an auditor reads, a portfolio manager approves messages."""
+        return self.role in ("officer", "supervisor")
+
+    @property
+    def decides_messages(self) -> bool:
+        """Portfolio managers and supervisors approve collections messages."""
+        return self.role in ("manager", "supervisor")
+
+    def cannot_decide_payments(self) -> str:
+        return ("Portfolio managers approve messages, not payments." if self.role == "manager"
+                else "Auditors can see the queue but not decide.")
 
     def public(self) -> dict:
         return {"id": self.id, "name": self.name, "role": self.role, "limit_kobo": self.limit_kobo}

@@ -24,7 +24,7 @@ export function RetryPosting({
 
   const noteStyle = onDark ? { color: "inherit" } : undefined;
   if (refused) return <span className="note" style={noteStyle}>Needs a new proposal and decision</span>;
-  if (!staff || staff.role === "auditor") return <span className="note" style={noteStyle}>Read only</span>;
+  if (!staff || !["officer", "supervisor"].includes(staff.role)) return <span className="note" style={noteStyle}>Read only</span>;
 
   async function retry() {
     setBusy(true);
