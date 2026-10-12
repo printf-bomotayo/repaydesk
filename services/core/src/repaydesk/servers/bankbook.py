@@ -40,10 +40,11 @@ def build(book: Bankbook) -> MCPServer:
         return answer(book.payment_line, line_id)
 
     @server.tool(annotations=READ_ONLY)
-    def search_borrowers(text: str, branch_code: str | None = None, limit: int = 8) -> dict:
+    def search_borrowers(text: str, branch_code: str | None = None, limit: int = 12) -> dict:
         """Borrowers whose name, trading name or savings group reads like `text`, best match first, each
         with their loans (status, outstanding, arrears). Finds misspelt, initialled ("EZE C") and reordered
-        names. `branch_code` (e.g. IKJ) keeps to one branch. match_score runs from 0 to 1."""
+        names. `branch_code` (e.g. IKJ) keeps to one branch. match_score runs from 0 to 1. `matches` is how
+        many borrowers matched in all; when it's more than were shown, ask again (limit up to 25)."""
         return answer(book.search_borrowers, text, branch_code, limit)
 
     @server.tool(annotations=READ_ONLY)
@@ -68,6 +69,20 @@ def build(book: Bankbook) -> MCPServer:
         """A loan read live from core banking (e.g. LN-2026-000717): status, outstanding, arrears and days
         late, the next instalments, and the amounts that a payment on it would usually be."""
         return answer(book.loan, loan_ref)
+
+    @server.tool(annotations=READ_ONLY)
+    def loans_fitting(amount_kobo: int, refs: list[str]) -> dict:
+        """Which of up to 25 borrowers' (CUS-...) or loans' (LN-...) active loans an amount would fit, read
+        live: the next instalment, a whole instalment, the arrears or the full balance. Use it to check every
+        candidate at once before saying that only one fits."""
+        return answer(book.loans_fitting, amount_kobo, refs)
+
+    @server.tool(annotations=READ_ONLY)
+    def nearby_loan_refs(loan_ref: str) -> dict:
+        """Loans whose reference is one slip away from the one quoted (one digit different, or two neighbouring
+        digits swapped), with each borrower's name and branch, and whose loan the quoted reference really is.
+        Use it when a quoted reference belongs to someone who doesn't match the payer."""
+        return answer(book.nearby_loan_refs, loan_ref)
 
     @server.tool(annotations=READ_ONLY)
     def payment_history(loan_ref: str, limit: int = 10) -> dict:

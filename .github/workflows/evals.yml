@@ -1,0 +1,70 @@
+name: Investigator eval
+
+# On demand only: every run calls the Claude API (about $2.40 for the 60 cases). It needs the
+# ANTHROPIC_API_KEY repository secret. The stack is seeded exactly as evals/cases.json expects
+# (seed 42, 2,000 borrowers, as of 8 October 2026), then the cases run dry; the report is uploaded.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Run only the first N cases (empty for all 60)"
+        required: false
+        default: ""
+      concurrency:
+        description: "Cases at a time"
+        required: false
+        default: "4"
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    name: investigator eval (60 hard cases, dry)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SEED_BORROWERS: "2000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: the API key is set
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Add ANTHROPIC_API_KEY under Settings > Secrets and variables > Actions to run the eval."
+            exit 1
+          fi
+      - run: python scripts/dev.py env
+      - run: mkdir -p data && chmod 777 data
+      - run: docker compose up -d --wait --wait-timeout 900
+      - name: seed the week the cases come from
+        run: docker compose run --rm --build seed python -m repaydesk.seed --as-of 2026-10-08
+      - name: ingest the week and run the rules, as the cases were chosen
+        run: |
+          docker compose run --rm --build ingest
+          docker compose run --rm ingest python -m repaydesk.ingest --replay-webhooks http://api:8000
+          docker compose run --rm --build match
+      - run: pip install -e "services/core[dev]"
+      - name: run the eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          args="--concurrency ${{ inputs.concurrency }}"
+          if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          python scripts/dev.py eval $args
+      - name: the report, in this run's summary
+        if: always()
+        run: |
+          report=$(ls -t evals/reports/*.md 2>/dev/null | head -1)
+          if [ -n "$report" ]; then sed -n '1,40p' "$report" >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: evals/reports/
+      - if: failure()
+        run: docker compose logs --tail=200

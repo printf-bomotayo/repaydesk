@@ -1387,7 +1387,8 @@ This chunk builds its window, before the agent itself, so the agent's reach is s
 
 - **The bankbook MCP server**, `repaydesk.servers.bankbook`, has eight lookups:
   - a payment line as it arrived;
-  - borrowers by name, trading name or group, fuzzily;
+  - borrowers by name, trading name or group, fuzzily (corrected in chunk 12: the search now says how
+    many borrowers matched and when its list is cut short; it used to stop at 8 silently);
   - borrowers by the phone typed on a line;
   - a borrower and a group;
   - a loan, read live from Fineract, with what's due next and the amounts that would fit;
@@ -1657,5 +1658,167 @@ What it does not prove:
   > lines investigated, 15 correct, about 2.5 cents each. ADR 0009.
 
 **Plan.** Milestone 3, investigator agent, MCP and evals: the investigator on the Claude models.
+
+---
+
+## Chunk 12 — the investigator's eval ✅
+
+_Date: 2026-10-12_
+
+**What & why.** _Metaphor: the practice file._ A bank trains a new investigator on a drawer of old
+cases whose answers are known. They work each one cold, and a senior marks them:
+- right;
+- wrong, the ones that would have moved someone else's money;
+- held for a phone call, cautious but harmless.
+
+The marks are only worth something if the drawer stays the same between tries, and if the senior
+marks to the kobo.
+
+Chunk 11's agent got 15 of 15 right on the oldest open lines, but those were the easy ones. This
+chunk builds the drawer and the marking:
+
+- **The cases**: `evals/cases.json`, and `cases.md` to read. 60 hard payments from the seeded week:
+  - every group leader, third party, mistyped reference, payer-only and Pidgin payment, and the
+    split;
+  - the three nobody could place;
+  - 6 each of names, trading names and cash-sheet names.
+
+  The expected answers are the generator's truth, never a model's.
+- **The runner**, `repaydesk.evals`: each case through the real investigator, the real MCP tools and
+  Repaydesk's real checks, against the stack, but dry. Nothing is written, and the review queue is
+  untouched. Four at a time, each with its own database session.
+- **The grading**:
+  - correct: the same loans and amounts to the kobo, or suspense for the unplaceable;
+  - wrong: any other match, or a repayment called "not a repayment";
+  - held: suspense for a placeable payment;
+  - failed: no answer.
+
+  The report puts **wrong** first, with a 95% interval on accuracy, a table by kind of payment, and
+  every case with its reason, tools and cost.
+- **On demand in CI.** The **Investigator eval** workflow, manual only, seeds the stack exactly as
+  the cases expect and uploads the report. It needs the `ANTHROPIC_API_KEY` repository secret.
+- **One round of fixes, from what the eval found:**
+  - **The search hid how many borrowers matched.** `search_borrowers` returned 8 and said nothing
+    about the rest. Told to check every candidate, the agent checked the 8 it saw: "Only Obinna
+    Ibe's loan fits ₦121,000", out of 46 borrowers trading as Success Motors Spares. The search now
+    says how many matched, shows up to 25, and says plainly when more weren't shown. Chunk 10's
+    section is corrected.
+  - **`loans_fitting`**: one call checks an amount against every candidate's loans, read live.
+    Saying "no other loan fits" no longer costs eight lookups.
+  - **`nearby_loan_refs`**: the real loans one slip away from a quoted reference (a digit changed,
+    or two swapped), with each borrower's name and branch.
+  - **Three prompt rules**:
+    - check every candidate before claiming only one fits;
+    - a quoted reference is evidence only if its borrower fits the payer;
+    - a split chosen because its amounts add up is a guess, and goes to suspense.
+
+**Decisions worth recording.**
+
+*Exact grading, from the generator.* The truth was written when each payment was made up, so the
+grader is a comparison, not a judge: no model marks the model. The price is that the truth can't
+see ambiguity it created. It gives one trading name to dozens of borrowers, so some payments it
+calls placeable aren't, from the payment alone. Holding those shows as "held", not "wrong", and
+the README says so.
+
+*Wrong counts more than right.* A held payment costs a phone call. A wrong one, if a reviewer
+misses it, moves someone else's money. The report and the runs table lead with it.
+
+*Dry runs.* The eval never writes a proposal, so it can run against the stack people use. A
+failed case (an outage, a refusal) is "failed", not "wrong".
+
+*On demand, not on every push* (the user's choice): about $2.40 a run.
+
+**Found on the way.**
+
+- *The search cut lists short silently*, and the agent believed it had seen everyone. See above.
+- *The API key's credit ran out* during the third run, after 26 cases. The other 34 failed with
+  "Your credit balance is too low". The run's report was removed as incomplete. The same key is
+  the Automation Hub's, so the hub's model calls fail too until credit is added.
+- *I misread two wrong answers as circular evidence*: the agent citing its own earlier guesses.
+  They weren't. The earlier payments it cited were matched by the virtual-account rule, which is
+  certain. Those two are close calls, a relative paying with a family member's name.
+
+**Principles.** _Same practice-file metaphor._ *Keep the drawer fixed*: the same 60 cases every
+run, chosen by rule, so a change shows. *Mark to the kobo*: exact comparison, no judge. *Count the
+dangerous mistakes first*: wrong before right. *Say what the marks can't see*: noise (±12 points)
+and the truth's own blind spots are in the report.
+
+**Files.**
+
+- New:
+  - `src/repaydesk/evals.py`;
+  - `tests/test_evals.py`;
+  - `evals/README.md`, `cases.json`, `cases.md`;
+  - `evals/reports/` (two runs, Markdown and JSON lines);
+  - `.github/workflows/evals.yml`.
+- Changed:
+  - `bankbook.py`: `loans_fitting`, `nearby_loan_refs`; the search reports its total and says
+    when a list is cut;
+  - `servers/bankbook.py`: the two tools;
+  - `investigator.py`: three prompt rules;
+  - `tests/test_bankbook.py`: three tests;
+  - `tests/test_investigator.py`: the tool set;
+  - `scripts/dev.py` and `Makefile` (`eval`), `README.md`;
+  - `docs/adr/0009-investigator-agent.md`: the eval's results.
+
+**Depends on / blocks.** Depends on chunk 11. Blocks chunk 13 (the Agent runs screen) only in that
+it shows what runs look like; milestone 3's demo can now quote a measured number.
+
+**Verification.** `ruff` clean. `pytest`: 122 passed, 6 new, none calling a model.
+
+- Grading to the kobo: a kobo out is wrong, an exclusion of a repayment is wrong, a split in either
+  order is right, and suspense is right only for the unplaceable.
+- The interval for 31 of 60: 39% to 64%.
+- The summary keeps wrong apart from held, and the report survives a pipe in a reason.
+- The committed `cases.json` is exactly what `select` makes from the seeded truth.
+- `loans_fitting` finds a loan's instalment among six candidates, by loan or by borrower.
+- `nearby_loan_refs` finds a loan one slip away.
+- A search cut to 2 of many says how many more match.
+
+`vitest` 28 passed.
+
+The runs, against the local stack:
+
+| Run | Correct | Wrong | Held | Failed | Cost |
+|---|---:|---:|---:|---:|---:|
+| First, the chunk 11 agent | 31 | 5 | 24 | 0 | $2.13 |
+| With the two tools and three rules | 30 | 3 | 27 | 0 | $2.42 |
+| With the search fix (incomplete) | 15 of 26 run | 0 | 11 | 34 | $1.76 |
+
+- **The second run.** Mistyped references went from 4 of 6 to 6 of 6. The two wrong group splits
+  are now held, though so are two that had been right. The 3 still wrong:
+  - "Success Motors Spares", caused by the cut-off search;
+  - two relatives paying with a family member's name.
+- **The third run.** Of its 26 cases, none were wrong. Success Motors became an honest hold: "46
+  borrowers trade as Success Motors Spares … at least three Abuja Wuse loans fit ₦121,000 equally."
+
+What it does not prove:
+
+- **The search fix over the whole set.** The third run stopped at 26 of 60 when the credit ran
+  out; it has to be run again in full.
+- **Improvement beyond the cases.** The fixes were diagnosed on these same 60 cases, so the second
+  run may flatter them. There is no held-out set yet, and the differences between runs (31 against
+  30) are inside the noise.
+- **Doubt, well.** Only 3 cases are truly unplaceable (all 3 held, every run). The eval can't yet
+  say much about the agent declining when it should, beyond the trading-name collisions.
+- **The workflow itself.** It hasn't run: it needs the repository secret, and credit.
+- **The local numbers are on a used stack.** It holds proposals and postings from earlier chunks,
+  and its "today" is 12 October. A fresh stack, as the workflow builds, may differ by a few cases.
+
+**PR package.**
+
+- Subject: `Chunk 12: the investigator's eval (60 hard cases, exact grading), and what it found`
+- Description:
+  > Adds a fixed eval for the investigator agent: 60 hard payments from the seeded week, run dry
+  > through the real agent, MCP tools and checks, and graded exactly against the generator's truth
+  > (correct to the kobo, wrong, held, failed). The report leads with wrong answers and gives a 95%
+  > interval. `python scripts/dev.py eval` locally; a manual GitHub Actions workflow with the API
+  > key as a secret. The first runs found a search that silently cut its results to 8 (fixed: it
+  > now reports the total), and led to two tools (`loans_fitting`, `nearby_loan_refs`) and three
+  > prompt rules. Wrong answers went from 5 to 3 over the full set, and none in the partial third
+  > run.
+
+**Plan.** Milestone 3, investigator agent, MCP and evals: the eval set of hard lines, and the
+report.
 
 ---

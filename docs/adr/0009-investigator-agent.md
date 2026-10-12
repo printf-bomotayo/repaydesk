@@ -56,5 +56,8 @@ model, without letting a model move money or overrule the controls people work u
 
 - About 2.5 US cents a line at list prices: 15 live runs cost $0.37 in all, most of it Sonnet's
   first turn, with the cached prompt and tools after.
-- Quality is measured, not assumed: chunk 12 adds a fixed eval set of hard lines and a report.
+- Quality is measured, not assumed: `evals/` holds a fixed set of 60 hard payments, graded exactly
+  against the generator's truth. The first run placed 31 correctly, held 24 and got 5 wrong; the
+  wrong ones led to two more tools (`loans_fitting`, `nearby_loan_refs`), three prompt rules and a
+  search fix (`evals/README.md`).
 - The prompt is product code. A change to it is reviewed like code and run against the evals.

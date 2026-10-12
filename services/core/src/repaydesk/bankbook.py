@@ -15,6 +15,7 @@ Money is in kobo, with a naira string beside it so nobody has to divide by a hun
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 import psycopg
@@ -54,7 +55,8 @@ def _alike(field: str) -> str:
 _SEARCH = f"""
 SELECT b.ref, b.name, b.business_name, b.group_ref, b.group_name, b.branch_code, b.branch_name, b.phone, b.copied_at,
        greatest({_alike("lower(b.name)")}, {_alike("lower(coalesce(b.business_name, ''))")},
-                {_alike("lower(coalesce(b.group_name, ''))")}) AS score
+                {_alike("lower(coalesce(b.group_name, ''))")}) AS score,
+       count(*) OVER () AS total
 FROM borrowers b
 WHERE b.active AND (lower(b.name) OPERATOR(public.%%) %(q)s OR %(q)s OPERATOR(public.<%%) lower(b.name)
    OR %(q)s OPERATOR(public.%%>) lower(b.name)
@@ -127,16 +129,22 @@ class Bankbook:
             found.append(item)
         return found
 
-    def search_borrowers(self, text: str, branch_code: str | None = None, limit: int = 8) -> dict:
+    def search_borrowers(self, text: str, branch_code: str | None = None, limit: int = 12) -> dict:
         q = " ".join(text.lower().split())
         if len(q) < 2:
             raise NotFound("Search for at least two letters of a name, trading name or group.")
         with self.conn.transaction():
             self.conn.execute(_THRESHOLDS)
-            rows = self.conn.execute(_SEARCH, {"q": q, "branch": branch_code, "limit": min(max(limit, 1), 20)}
+            rows = self.conn.execute(_SEARCH, {"q": q, "branch": branch_code, "limit": min(max(limit, 1), 25)}
                                      ).fetchall()
-        return {"searched_for": text, "branch_code": branch_code,
-                "borrowers": self._borrowers(rows, [r[9] for r in rows])}
+        total = rows[0][10] if rows else 0
+        found = {"searched_for": text, "branch_code": branch_code, "matches": total, "shown": len(rows),
+                 "borrowers": self._borrowers(rows, [r[9] for r in rows])}
+        if total > len(rows):
+            # Said plainly, because a list cut short reads like a complete one.
+            found["more_not_shown"] = (f"{total - len(rows)} more borrowers match. Ask again with a larger limit "
+                                       f"(up to 25) or a branch_code before concluding anything about all of them.")
+        return found
 
     def borrowers_by_line_phone(self, line_id: str) -> dict:
         """Borrowers whose phone is the one typed on a payment line. The number stays here."""
@@ -187,6 +195,60 @@ class Bankbook:
             "amounts_that_would_fit": [_money(a) for a in sorted(amounts_due(view))],
             "read_live_from_core_banking": True,
         }
+
+    def loans_fitting(self, amount_kobo: int, refs: list[str]) -> dict:
+        """Which of these borrowers' (or loans') active loans an amount would fit, read live: the next
+        instalment, a whole instalment, the arrears, or the full balance. One call checks every
+        candidate, so "no other loan fits" can be said only after looking."""
+        refs = list(dict.fromkeys(r.strip() for r in refs if r.strip()))[:25]
+        if not refs:
+            raise NotFound("Give borrower references (CUS-...) or loan references (LN-...) to check.")
+        rows = self.conn.execute(
+            "SELECT l.ref, l.borrower_ref, b.name, b.branch_code FROM loans l "
+            "JOIN borrowers b ON b.ref = l.borrower_ref "
+            "WHERE (l.ref = ANY(%(refs)s) OR l.borrower_ref = ANY(%(refs)s)) AND l.status = 'active' ORDER BY l.ref",
+            {"refs": refs}).fetchall()
+        checked = []
+        for loan_ref, borrower_ref, name, branch in rows:
+            view = self.core.get_loan(loan_ref)
+            if not view or view.status != "active":
+                continue
+            unpaid = [i for i in view.installments if i.outstanding > 0]
+            named = {"next instalment still owed": unpaid[0].outstanding if unpaid else None,
+                     "a whole instalment": unpaid[0].total if unpaid else None,
+                     "the arrears": view.arrears or None, "the full balance": view.outstanding or None}
+            checked.append({"loan_ref": loan_ref, "borrower_ref": borrower_ref, "borrower_name": name,
+                            "branch_code": branch, "fits_as": [k for k, v in named.items() if v == amount_kobo],
+                            "arrears": _money(view.arrears), "next_instalment": _money(named["a whole instalment"])})
+        return {"amount": _money(amount_kobo), "asked_about": refs, "active_loans_checked": len(checked),
+                "fitting": [c for c in checked if c["fits_as"]],
+                "not_fitting": [c for c in checked if not c["fits_as"]]}
+
+    def nearby_loan_refs(self, loan_ref: str) -> dict:
+        """Loans whose reference is one slip away from `loan_ref`: one digit different, or two neighbouring
+        digits swapped. A quoted reference whose borrower doesn't match the payer is often one of these."""
+        m = re.fullmatch(r"LN-(\d{4})-(\d{6})", loan_ref.strip().upper())
+        if not m:
+            raise NotFound("A loan reference looks like LN-2026-001509.")
+        year, digits = m.groups()
+        near = set()
+        for i in range(6):
+            for d in "0123456789":
+                if d != digits[i]:
+                    near.add(digits[:i] + d + digits[i + 1:])
+            if i < 5 and digits[i] != digits[i + 1]:
+                near.add(digits[:i] + digits[i + 1] + digits[i] + digits[i + 2:])
+        rows = self.conn.execute(
+            "SELECT l.ref, l.status, b.ref, b.name, b.business_name, b.branch_code, b.branch_name FROM loans l "
+            "JOIN borrowers b ON b.ref = l.borrower_ref WHERE l.ref = ANY(%s) ORDER BY l.ref",
+            ([f"LN-{year}-{n}" for n in sorted(near)],)).fetchall()
+        quoted = self.conn.execute(
+            "SELECT b.name, b.branch_code FROM loans l JOIN borrowers b ON b.ref = l.borrower_ref WHERE l.ref = %s",
+            (loan_ref.strip().upper(),)).fetchone()
+        owner = {"name": quoted[0], "branch_code": quoted[1]} if quoted else None
+        return {"quoted": loan_ref, "quoted_belongs_to": owner,
+                "one_slip_away": [{"loan_ref": r[0], "status": r[1], "borrower_ref": r[2], "name": r[3],
+                                   "trading_name": r[4], "branch_code": r[5], "branch_name": r[6]} for r in rows]}
 
     def payment_history(self, loan_ref: str, limit: int = 10) -> dict:
         """How a loan has been paid: repayments core banking holds, and the lines Repaydesk matched to it,

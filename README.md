@@ -53,7 +53,7 @@ ingested and matched by rule, Amaka and Tunde approve through the API, the gatew
 demo finds each repayment in Fineract and each journal entry in Odoo. Then open **Today**.
 [`docs/demo.md`](docs/demo.md) is the same story to click through, for showing someone.
 
-Other tasks: `seed`, `ingest`, `match`, `score`, `investigate`, `demo`, `mcp`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
+Other tasks: `seed`, `ingest`, `match`, `score`, `investigate`, `eval`, `demo`, `mcp`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
 and for the web app `web` (live reload on http://127.0.0.1:5173, needs Node 24) and `webtest`
 (`python scripts/dev.py <task>`).
 
@@ -165,6 +165,11 @@ Built so far (milestone 1):
   suspense. Every run is kept, with each tool call and its cost (about 2.5 US cents a line).
   `python scripts/dev.py investigate --limit 10` runs it (needs `ANTHROPIC_API_KEY`). See
   [ADR 0009](docs/adr/0009-investigator-agent.md).
+- **Evals** (chunk 12, [`evals/`](evals/README.md)): 60 hard payments from the seeded week,
+  run dry through the real agent and checks, graded exactly against the generator's truth: right
+  loans to the kobo, wrong, or held in suspense. `python scripts/dev.py eval`, or the manual
+  **Investigator eval** workflow in GitHub Actions. The first runs found and fixed a search that
+  hid how many borrowers matched, and cut wrong answers from 5 to 3.
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract

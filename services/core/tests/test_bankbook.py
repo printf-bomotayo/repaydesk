@@ -63,6 +63,14 @@ def test_names_are_found_misspelt_initialled_reordered_or_by_trading_name(placed
     assert someone.ref not in refs(someone.full_name, branch_code=other_branch)
     with pytest.raises(NotFound):
         bk.search_borrowers("a")
+    # A list cut short says so: the agent was once told "8 borrowers" when 12 shared a trading name.
+    common = max({b.business_name for b in book.borrowers if b.business_name},
+                 key=lambda n: sum(1 for b in book.borrowers if b.business_name == n))
+    sharing = sum(1 for b in book.borrowers if b.business_name == common)
+    cut = bk.search_borrowers(common, limit=2)
+    assert cut["matches"] >= sharing > 2 and cut["shown"] == 2 and "more borrowers match" in cut["more_not_shown"]
+    whole = bk.search_borrowers(common, limit=25)
+    assert "more_not_shown" not in whole or whole["matches"] > 25
 
 
 @db_test
@@ -110,6 +118,39 @@ def test_history_shows_how_a_loan_was_paid_and_who_paid_it(placed_week, conn):
 
 
 @db_test
+def test_one_call_checks_an_amount_against_every_candidate(placed_week):
+    bk, book = placed_week
+    loans = [x.ref for x in book.loans if (v := bk.core.get_loan(x.ref)) and v.status == "active"][:6]
+    target = bk.core.get_loan(loans[0])
+    due = next(i.outstanding for i in target.installments if i.outstanding > 0)
+    got = bk.loans_fitting(due, loans)
+    assert got["active_loans_checked"] == len(loans)
+    assert loans[0] in [f["loan_ref"] for f in got["fitting"]]
+    assert "next instalment still owed" in next(f for f in got["fitting"] if f["loan_ref"] == loans[0])["fits_as"]
+    by_borrower = bk.loans_fitting(due, [target.borrower_ref])
+    assert loans[0] in [f["loan_ref"] for f in by_borrower["fitting"]]
+    with pytest.raises(NotFound):
+        bk.loans_fitting(due, [])
+
+
+@db_test
+def test_a_slipped_reference_finds_the_loans_one_typo_away(placed_week):
+    bk, book = placed_week
+    refs = sorted(x.ref for x in book.loans)
+    quoted, real = refs[10], refs[11]  # consecutive references differ in one digit, or by a carry
+    got = bk.nearby_loan_refs(quoted)
+    assert got["quoted_belongs_to"]["name"]
+    if sum(a != b for a, b in zip(quoted, real, strict=True)) == 1:
+        assert real in [n["loan_ref"] for n in got["one_slip_away"]]
+    swapped = quoted[:-2] + quoted[-1] + quoted[-2]
+    if swapped != quoted and swapped in refs:
+        assert swapped in [n["loan_ref"] for n in got["one_slip_away"]]
+    assert quoted not in [n["loan_ref"] for n in got["one_slip_away"]]
+    with pytest.raises(NotFound):
+        bk.nearby_loan_refs("not a loan")
+
+
+@db_test
 def test_the_session_refuses_writes(placed_week):
     bk, _ = placed_week
     with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
@@ -135,7 +176,8 @@ def test_the_bankbook_server_offers_only_reads_and_says_what_it_couldnt_find(pla
 
     tools, found, missing, bad = anyio.run(session)
     assert {t.name for t in tools} == {"get_payment_line", "search_borrowers", "borrowers_by_line_phone",
-                                        "get_borrower", "get_group", "get_loan", "payment_history", "find_payments"}
+                                        "get_borrower", "get_group", "get_loan",
+                                        "loans_fitting", "nearby_loan_refs", "payment_history", "find_payments"}
     assert all(t.annotations.read_only_hint and not t.annotations.destructive_hint for t in tools)
     assert all(len(t.description) > 60 for t in tools)
     assert not found.is_error and json.loads(found.content[0].text)["borrowers"][0]["borrower_ref"] == someone.ref

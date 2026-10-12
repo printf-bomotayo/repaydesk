@@ -1,0 +1,790 @@
+{
+ "book": {
+  "seed": 42,
+  "borrowers": 2000,
+  "as_of": "2026-10-08"
+ },
+ "cases": [
+  {
+   "id": "bank_csv:NGT597654822170",
+   "case": "business_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000854",
+     9075000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT604966655434",
+   "case": "business_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-002063",
+     4450000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT955120802300",
+   "case": "business_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001042",
+     42250000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST3082642801",
+   "case": "business_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001359",
+     9075000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST4063222677",
+   "case": "business_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001215",
+     12100000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST9758245850",
+   "case": "business_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000717",
+     60500000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-ABK-00003",
+   "case": "cash_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001167",
+     8925000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-IKJ-00001",
+   "case": "cash_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000524",
+     13500000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-MSH-00004",
+   "case": "cash_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000836",
+     13860000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-ONT-00002",
+   "case": "cash_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000388",
+     60500000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-OSH-00001",
+   "case": "cash_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000839",
+     96800000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-OSH-00006",
+   "case": "cash_name",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-002059",
+     96800000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-IBD-00002",
+   "case": "cash_ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001509",
+     36300000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-IBD-00003",
+   "case": "cash_ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001898",
+     18150000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-IBD-00005",
+   "case": "cash_ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001923",
+     7770000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-MSH-00001",
+   "case": "cash_ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000387",
+     7665000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "branch_cash:RCP-ONT-00004",
+   "case": "cash_ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-002073",
+     12100000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT276187041916",
+   "case": "group_leader",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000031",
+     1936000
+    ],
+    [
+     "LN-2026-000032",
+     4477000
+    ],
+    [
+     "LN-2026-000033",
+     2300000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT352304779313",
+   "case": "group_leader",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000070",
+     3025000
+    ],
+    [
+     "LN-2026-000071",
+     4598000
+    ],
+    [
+     "LN-2026-000072",
+     3630000
+    ],
+    [
+     "LN-2026-000073",
+     1452000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT592749011369",
+   "case": "group_leader",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000024",
+     2541000
+    ],
+    [
+     "LN-2026-000026",
+     1500000
+    ],
+    [
+     "LN-2026-000027",
+     5082000
+    ],
+    [
+     "LN-2026-000028",
+     1700000
+    ],
+    [
+     "LN-2026-000029",
+     5203000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT719386308154",
+   "case": "group_leader",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000065",
+     1815000
+    ],
+    [
+     "LN-2026-000066",
+     5203000
+    ],
+    [
+     "LN-2026-000068",
+     3146000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST4127433350",
+   "case": "group_leader",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000196",
+     1331000
+    ],
+    [
+     "LN-2026-000197",
+     1210000
+    ],
+    [
+     "LN-2026-000198",
+     2200000
+    ],
+    [
+     "LN-2026-000201",
+     3388000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST4333226400",
+   "case": "group_leader",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000160",
+     3630000
+    ],
+    [
+     "LN-2026-000161",
+     3872000
+    ],
+    [
+     "LN-2026-000164",
+     3872000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST7636973606",
+   "case": "group_leader",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000173",
+     3630000
+    ],
+    [
+     "LN-2026-000177",
+     2904000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST9610591552",
+   "case": "group_leader",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000144",
+     2420000
+    ],
+    [
+     "LN-2026-000145",
+     1350000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT176130934284",
+   "case": "name_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000924",
+     36300000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT775069929184",
+   "case": "name_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000608",
+     18150000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT872389625578",
+   "case": "name_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001424",
+     8050000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST5259726276",
+   "case": "name_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001551",
+     9075000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST9086470232",
+   "case": "name_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001599",
+     6050000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST9410314097",
+   "case": "name_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001559",
+     36300000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT508445624821",
+   "case": "payer_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000832",
+     6050000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT824081761531",
+   "case": "payer_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000906",
+     60500000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST1003427357",
+   "case": "payer_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001885",
+     5355000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST2884064381",
+   "case": "payer_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001851",
+     15000000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST5665646753",
+   "case": "payer_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001875",
+     9075000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST6160965451",
+   "case": "payer_only",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001605",
+     96800000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT884445337785",
+   "case": "pidgin",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001750",
+     24200000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT933598228053",
+   "case": "pidgin",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001779",
+     37550000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST1741832283",
+   "case": "pidgin",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001616",
+     2200000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "pos:404545890043",
+   "case": "pos_blank",
+   "placeable": false,
+   "expected": null,
+   "note": "agent left the reference blank"
+  },
+  {
+   "id": "pos:590448177741",
+   "case": "pos_blank",
+   "placeable": false,
+   "expected": null,
+   "note": "agent left the reference blank"
+  },
+  {
+   "id": "bank_csv:NGT246718646875",
+   "case": "ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001940",
+     24200000
+    ]
+   ],
+   "note": "reference typed as LN-2026-001904"
+  },
+  {
+   "id": "bank_csv:NGT358971683761",
+   "case": "ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001978",
+     7350000
+    ]
+   ],
+   "note": "reference typed as LN-2026-00197"
+  },
+  {
+   "id": "bank_csv:NGT843337489368",
+   "case": "ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000063",
+     1050000
+    ]
+   ],
+   "note": "reference typed as LN-2026-00063"
+  },
+  {
+   "id": "bank_mt940:CST1067320913",
+   "case": "ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000863",
+     7455000
+    ]
+   ],
+   "note": "reference typed as LN-2026-00063"
+  },
+  {
+   "id": "bank_mt940:CST2041596850",
+   "case": "ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000238",
+     6100000
+    ]
+   ],
+   "note": "reference typed as LN-2026-00238"
+  },
+  {
+   "id": "bank_mt940:CST8127851667",
+   "case": "ref_typo",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000697",
+     4725000
+    ]
+   ],
+   "note": "reference typed as LN-2026-00097"
+  },
+  {
+   "id": "bank_mt940:CST8515408090",
+   "case": "split_across_loans",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000581",
+     60500000
+    ],
+    [
+     "LN-2026-000582",
+     13125000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT461930756223",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000543",
+     13440000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT605416234788",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001772",
+     13965000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT620299532700",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000206",
+     18150000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT734215115366",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000577",
+     10080000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT781947616066",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001751",
+     60500000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT813839034507",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001818",
+     6050000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT847383537085",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-002113",
+     36300000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST3771084425",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000152",
+     5687000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST9452087280",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-000039",
+     2000000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_mt940:CST9937503865",
+   "case": "third_party",
+   "placeable": true,
+   "expected": [
+    [
+     "LN-2026-001460",
+     96800000
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "id": "bank_csv:NGT468631703776",
+   "case": "unresolvable",
+   "placeable": false,
+   "expected": null,
+   "note": "no name, reference or account a person could trace"
+  }
+ ]
+}

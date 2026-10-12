@@ -10,6 +10,7 @@
     python scripts/dev.py match     propose matches for new lines by rule (certain cases only)
     python scripts/dev.py score     score the live proposals against the truth file
     python scripts/dev.py investigate   the investigator agent on open lines (--limit N, --line ID; uses the API key)
+    python scripts/dev.py eval      the investigator's eval: 60 hard cases, dry, graded (--limit N; about $1.50)
     python scripts/dev.py demo      milestone 2 end to end: a new statement, matched, approved, posted, checked
                                     (--for-review: stop after matching; approve in the web app)
     python scripts/dev.py directory copy the book from Fineract into the borrower directory now
@@ -170,6 +171,18 @@ def main(task: str) -> None:
         # The investigator agent; pass --limit N or --line ID. Needs ANTHROPIC_API_KEY in .env (costs money).
         run("docker", "compose", "run", "--rm", "--build", "investigate", "python", "-m", "repaydesk.investigate",
             *sys.argv[2:])
+    elif task == "eval":
+        # The investigator's eval: the fixed hard cases, run dry against the stack; report in evals/reports/.
+        # About $1.50 for all 60 with the API key in .env. Pass --limit N for a pilot.
+        run(python(), "-m", "repaydesk.evals", "run", *sys.argv[2:], cwd=CORE, env={
+            "REPAYDESK_DATABASE_URL": test_database_url(),
+            "FINERACT_URL": "http://127.0.0.1:18080/fineract-provider/api/v1",
+            "FINERACT_USERNAME": env_value("FINERACT_READ_USERNAME") or "repaydesk-read",
+            "FINERACT_PASSWORD": env_value("FINERACT_READ_PASSWORD"),
+            "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY") or env_value("ANTHROPIC_API_KEY"),  # CI: a secret
+            "MODEL_PROVIDER": env_value("MODEL_PROVIDER") or "anthropic",
+            "PYTHONIOENCODING": "utf-8",
+        })
     elif task == "demo":
         run("docker", "compose", "run", "--rm", "--build", "demo", "python", "-m", "repaydesk.demo", *sys.argv[2:])
     elif task == "directory":

@@ -122,6 +122,16 @@ How to decide:
 - The amount is strong evidence: an instalment due, the arrears, or the whole balance (get_loan
   lists the amounts that would fit). So is the same payer paying the same loan before
   (payment_history, find_payments). A name match alone is weak when the name is common.
+- Check every candidate before saying only one fits. When a search returns several borrowers with
+  the same name or trading name, put all of them through loans_fitting in one call; never write
+  "no other loan fits" about loans you haven't looked at.
+- A quoted reference is evidence only if its borrower fits the payer. If the reference's borrower
+  has a different name, or banks at another branch than a cash or POS payment came through, it is
+  probably a slip: look at nearby_loan_refs and prefer a nearby loan whose borrower does fit.
+- A split must be explained by more than its total. It's a match when the payment equals what the
+  members named owe, or what the whole group owes, each by a recognisable amount (an instalment or
+  the arrears). If you would be choosing members because their amounts happen to add up, that's a
+  guess: answer suspense, listing the combinations you found.
 - When two or more borrowers fit about equally, don't choose: answer suspense and say who and why.
   A person will phone the branch. A wrong match moves someone else's money; suspense costs a call.
 - Calibrate confidence: above 0.9 only when name, amount and history agree; 0.7 to 0.9 when two

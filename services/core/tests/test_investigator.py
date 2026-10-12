@@ -159,7 +159,7 @@ def test_a_whole_investigation_through_the_tool_runner_and_the_mcp_server(placed
     assert triage["body"]["model"] == inv.CLASSIFIER_MODEL and second["body"]["model"] == inv.INVESTIGATOR_MODEL
     assert {t["name"] for t in first["body"]["tools"]} == {
         "get_payment_line", "search_borrowers", "borrowers_by_line_phone", "get_borrower", "get_group", "get_loan",
-        "payment_history", "find_payments"}  # the bankbook's tools, and nothing else
+        "loans_fitting", "nearby_loan_refs", "payment_history", "find_payments"}  # the bankbook's, nothing else
     assert first["body"]["fallbacks"] == "default" and "server-side-fallback-2026-07-01" in first["beta"]
     assert first["body"]["output_config"]["effort"] == "medium"
     shown = json.dumps(first["body"]["messages"][0]["content"])
