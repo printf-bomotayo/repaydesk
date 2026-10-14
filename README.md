@@ -44,7 +44,7 @@ collection journals in Odoo, and writes a week of incoming payments to `data/inb
 | Fineract staff screens | http://127.0.0.1:18081 (Mifos X web app; login `mifos` / `password`, tenant `default`) |
 | Odoo ledger | http://127.0.0.1:18069 (database `ledger`, login `admin` / `admin`; Invoicing → Accounting → Journal Entries) |
 | Jaeger traces | http://127.0.0.1:16686 |
-| Messaging simulator | http://127.0.0.1:18083 (each phone's inbox: what borrowers received; nothing leaves the machine) |
+| Messaging simulator | http://127.0.0.1:18083 (each phone's conversation, with a box to reply as the borrower; nothing leaves the machine) |
 | Repaydesk API | http://127.0.0.1:18000/docs (same logins; `POST /auth/sign-in`, then **Authorize** with the token) |
 | Postgres | 127.0.0.1:15432 |
 | The week's payment files | `data/inbox/` |
@@ -198,6 +198,12 @@ Built so far (milestone 1):
   and WhatsApp simulator, only 08:00 to 18:00 Lagos time, Monday to Saturday, and first checks
   again what may have changed: the approver's right, two messages a week, a promise made since.
   A provider outage is retried, and a message is never sent twice.
+- **Replies and promises** (chunk 17): a borrower's reply comes back from the simulator as a
+  signed webhook. Rules (no model) read it, in English or Pidgin: a reply with a date and an
+  intent to pay ("I go pay Friday") becomes a promise to pay on the loan the message was about,
+  and the borrower isn't messaged again before that date. "I don pay", a question, "stop" or
+  anything unclear waits on the Messages screen's Replies tab, where the manager records the
+  promise or closes the reply with a note. To try it, reply from a phone on the simulator's page.
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract

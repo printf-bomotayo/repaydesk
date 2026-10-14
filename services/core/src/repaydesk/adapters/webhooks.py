@@ -45,3 +45,30 @@ class PayRailWebhooks:
             payer_account=d.get("sender_account"),
             virtual_account=d.get("account_number"),
         )
+
+
+class MessagingWebhooks:
+    """Borrowers' replies from the messaging provider (the simulator, in the prototype), signed with
+    HMAC-SHA256 over the raw body. A redelivery carries the same reply id."""
+
+    SIGNATURE_HEADER = "x-messaging-signature"
+
+    def __init__(self, secret: str):
+        self.secret = secret.encode()
+
+    def sign(self, body: bytes) -> str:
+        return hmac.new(self.secret, body, hashlib.sha256).hexdigest()
+
+    def verify(self, body: bytes, signature: str) -> bool:
+        return hmac.compare_digest(self.sign(body), signature or "")
+
+    @staticmethod
+    def to_reply(body: bytes) -> dict:
+        event = json.loads(body)
+        if event.get("event") != "message.received":
+            raise ValueError("not a reply")
+        d = event["data"]
+        if d["channel"] not in ("sms", "whatsapp") or not str(d["body"]).strip():
+            raise ValueError("unreadable reply")
+        return {"provider_id": str(d["id"]), "channel": d["channel"], "from_phone": str(d["from"]),
+                "body": str(d["body"])[:2000]}

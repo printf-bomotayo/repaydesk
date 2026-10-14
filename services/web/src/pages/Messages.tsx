@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
-import { api, ApiError, type CollectionsMessage, type MessageStatus } from "../api";
+import { api, ApiError, type CollectionsMessage, type MessageStatus, type Reply } from "../api";
 import { announceChange, Failed, Loading, Pager, Pill, useLoad, useToast } from "../components/common";
 import { borrowerHref, LoanLink } from "../components/records";
-import { naira, stamp } from "../format";
+import { bankToday, day, naira, phone, stamp } from "../format";
 import { useSession } from "../session";
 import { RejectForm } from "./Review";
 import { runHref } from "./Runs";
@@ -29,10 +29,11 @@ const LIMIT: Record<string, number> = { sms: 320, whatsapp: 600 };
 const KIND_PILL: Record<string, string> = { reminder: "suspense", follow_up: "proposed", arrangement: "two", broken_promise: "late" };
 const REASONS = ["Tone is wrong for this borrower", "The borrower has already been in touch", "Not the right time to message", "Wrong details"];
 
-/** Collections messages: the drafts a portfolio manager approves, edits or rejects, and what happened to each since. */
+/** Collections messages: the drafts a portfolio manager approves, edits or rejects, what happened to each since, and the borrowers' replies. */
 export function Messages() {
   const { staff } = useSession();
   const [params, setParams] = useSearchParams();
+  const replying = params.get("view") === "replies";
   const status = (params.get("status") as MessageStatus | null) ?? "draft";
   const offset = Number(params.get("offset") ?? 0) || 0;
   const { data, error, reload } = useLoad(() => api.messages({ status, limit: PAGE, offset }), [status, offset]);
@@ -56,21 +57,32 @@ export function Messages() {
           <p className="sub">
             The drafting agent writes; a portfolio manager decides. Each message is checked against the collections policy
             again when it is approved, against the loan as core banking shows it then. Approved messages go out between
-            08:00 and 18:00, Monday to Saturday.
+            08:00 and 18:00, Monday to Saturday. A reply with a date becomes a promise to pay; any other reply waits here
+            for a person.
           </p>
         </div>
       </section>
 
       <div className="filters" role="group" aria-label="Messages by status">
         {TABS.map(([s, label]) => (
-          <button key={s} className="chip" aria-pressed={status === s} onClick={() => set({ status: s === "draft" ? "" : s, offset: "" })}>
+          <button
+            key={s}
+            className="chip"
+            aria-pressed={!replying && status === s}
+            onClick={() => set({ status: s === "draft" ? "" : s, offset: "", view: "", show: "" })}
+          >
             {label}
             {data && ` ${data.counts[s].toLocaleString()}`}
           </button>
         ))}
+        <button className="chip" aria-pressed={replying} onClick={() => set({ view: "replies", status: "", offset: "" })}>
+          Replies
+        </button>
       </div>
 
-      {error ? (
+      {replying ? (
+        <Replies decides={decides} params={params} set={set} />
+      ) : error ? (
         <Failed error={error} retry={reload} />
       ) : !data ? (
         <Loading what="the messages" />
@@ -289,6 +301,186 @@ function Decided({ message: m }: { message: CollectionsMessage }) {
         )}
         {m.status === "rejected" && m.reject_reason && <span className="note">Why: {m.reject_reason}</span>}
       </div>
+    </article>
+  );
+}
+
+// ---- replies ---------------------------------------------------------------------------------------
+
+const OUTCOME: Record<string, { label: string; pill: string }> = {
+  promise: { label: "a promise to pay", pill: "approved" },
+  says_paid: { label: "says it has paid", pill: "suspense" },
+  question: { label: "a question", pill: "proposed" },
+  stop: { label: "asks to stop", pill: "late" },
+  unclear: { label: "unclear", pill: "new" },
+  unknown_number: { label: "an unknown number", pill: "new" },
+};
+const PROMISE_PILL: Record<string, string> = { open: "approved", kept: "posted", broken: "late", cancelled: "superseded" };
+const SHOW: [string, string][] = [
+  ["", "Waiting for a person"],
+  ["done", "Dealt with"],
+  ["all", "All"],
+];
+
+function Replies({ decides, params, set }: { decides: boolean; params: URLSearchParams; set: (c: Record<string, string>) => void }) {
+  const show = params.get("show") ?? "";
+  const offset = Number(params.get("offset") ?? 0) || 0;
+  const waiting = show === "" ? true : show === "done" ? false : undefined;
+  const { data, error, reload } = useLoad(() => api.replies({ waiting, limit: PAGE, offset }), [show, offset]);
+
+  return (
+    <>
+      <div className="filters" role="group" aria-label="Replies">
+        {SHOW.map(([k, label]) => (
+          <button key={k || "waiting"} className="chip" aria-pressed={show === k} onClick={() => set({ show: k, offset: "" })}>
+            {label}
+            {k === "" && data && ` ${data.waiting.toLocaleString()}`}
+          </button>
+        ))}
+      </div>
+      {error ? (
+        <Failed error={error} retry={reload} />
+      ) : !data ? (
+        <Loading what="the replies" />
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {data.items.map((r) => (
+              <ReplyCard key={r.id} reply={r} decides={decides} onDone={reload} />
+            ))}
+          </div>
+          {data.items.length === 0 && <p className="empty">{show === "" ? "No replies waiting for a person." : "None."}</p>}
+          <Pager offset={offset} limit={PAGE} total={data.total} onPage={(o) => set({ offset: o ? String(o) : "" })} />
+        </>
+      )}
+    </>
+  );
+}
+
+function ReplyCard({ reply: r, decides, onDone }: { reply: Reply; decides: boolean; onDone: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [due, setDue] = useState("");
+  const [amount, setAmount] = useState(r.asked_kobo ? String(r.asked_kobo / 100) : "");
+  const [note, setNote] = useState("");
+  const o = r.outcome ? OUTCOME[r.outcome] : null;
+  const who = r.borrower_name ?? phone(r.from_phone);
+
+  async function act(action: () => Promise<string>) {
+    setBusy(true);
+    setRefusal(null);
+    try {
+      toast(await action());
+      onDone();
+      announceChange();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 422) setRefusal(e.message);
+      else {
+        toast(
+          e instanceof ApiError && e.status === 409
+            ? "Someone has already dealt with this reply."
+            : e instanceof Error
+              ? e.message
+              : "That didn't work.",
+        );
+        onDone();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function promise(e: FormEvent) {
+    e.preventDefault();
+    const kobo = Math.round(Number(amount.replace(/,/g, "")) * 100);
+    act(async () => {
+      await api.promiseFromReply(r.id, { due_on: due, amount_kobo: kobo });
+      return `Promise recorded: ${naira(kobo)} by ${day(due)}. ${who} won't be messaged before then.`;
+    });
+  }
+
+  function close(e: FormEvent) {
+    e.preventDefault();
+    act(async () => {
+      await api.closeReply(r.id, note.trim());
+      return "Dealt with. Your note is on the reply.";
+    });
+  }
+
+  return (
+    <article className="queue-item" aria-label={`Reply from ${who}`}>
+      <div>
+        <span className="ch">
+          {CHANNEL[r.channel] ?? r.channel} · {stamp(r.received_at)}
+        </span>
+        {r.borrower_ref ? <Link to={borrowerHref(r.borrower_ref)}>{who}</Link> : <b>{who}</b>}
+        <span className="note mono">{phone(r.from_phone)}</span>
+        {r.loan_ref && <LoanLink loanRef={r.loan_ref} />}
+        {r.answers && (
+          <span className="note">
+            Answering: <i>{r.answers}</i>
+          </span>
+        )}
+      </div>
+      <div>
+        <p style={{ margin: 0, fontSize: 18, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>"{r.body}"</p>
+        <span className="ch">
+          {o && <Pill status={o.pill} label={o.label} />}
+          {r.reading?.why && ` · ${r.reading.why}`}
+        </span>
+        {r.promise && (
+          <span>
+            Promise: <b>{naira(r.promise.amount_kobo)}</b> by {day(r.promise.due_on)} ·{" "}
+            <Pill status={PROMISE_PILL[r.promise.status] ?? "new"} label={r.promise.status} />
+          </span>
+        )}
+        {r.handled_at && (
+          <span className="note">
+            {r.handled_by === "rule:replies" ? "Recorded from the reply" : `Dealt with by ${r.handled_by_name ?? r.handled_by}`},{" "}
+            {stamp(r.handled_at)}
+            {r.note && `: ${r.note}`}
+          </span>
+        )}
+        {refusal && (
+          <div className="check no" role="alert">
+            <span className="m">✕</span>
+            <span>{refusal}</span>
+          </div>
+        )}
+      </div>
+      {!r.handled_at && (
+        <footer>
+          {!decides ? (
+            <span className="note">Read only: portfolio managers and supervisors deal with replies.</span>
+          ) : (
+            <>
+              <form className="reject-form" onSubmit={promise} aria-label="Record a promise">
+                <label htmlFor={`due-${r.id}`}>Promised for</label>
+                <input id={`due-${r.id}`} type="date" min={bankToday()} value={due} onChange={(e) => setDue(e.target.value)} required />
+                <label htmlFor={`amt-${r.id}`}>Amount, ₦</label>
+                <input
+                  id={`amt-${r.id}`}
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  required
+                  style={{ width: 110 }}
+                />
+                <button className="btn primary" type="submit" disabled={busy || !due || !amount || !r.loan_ref}>
+                  Record promise
+                </button>
+              </form>
+              <form className="reject-form" onSubmit={close} aria-label="Close the reply">
+                <input aria-label="What was done" value={note} maxLength={500} onChange={(e) => setNote(e.target.value)} placeholder="What was done" />
+                <button className="btn" type="submit" disabled={busy || !note.trim()}>
+                  Close
+                </button>
+              </form>
+            </>
+          )}
+        </footer>
+      )}
     </article>
   );
 }

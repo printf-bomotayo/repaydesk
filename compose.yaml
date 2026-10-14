@@ -206,6 +206,7 @@ services:
       OTEL_SERVICE_NAME: repaydesk-api
       REPAYDESK_DATABASE_URL: postgresql://repaydesk:${REPAYDESK_DB_PASSWORD}@db:5432/repaydesk
       PAYRAIL_WEBHOOK_SECRET: ${PAYRAIL_WEBHOOK_SECRET:-dev-only-payrail-secret}
+      MESSAGING_WEBHOOK_SECRET: ${MESSAGING_WEBHOOK_SECRET:-dev-only-messaging-secret}
       STAFF_DEMO_PASSWORD: ${STAFF_DEMO_PASSWORD:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
       # The gateway rechecks approvals with the same threshold.
@@ -272,7 +273,8 @@ services:
       retries: 5
 
   # A stand-in for the SMS and WhatsApp provider: takes messages from the gateway as an
-  # aggregator's API would, and shows each phone's inbox. Nothing leaves the machine.
+  # aggregator's API would, shows each phone's conversation, and sends the replies typed there back
+  # to the API as signed webhooks. Nothing leaves the machine.
   messaging:
     build: ./services/core
     restart: unless-stopped
@@ -281,6 +283,8 @@ services:
       MESSAGING_TOKEN: ${MESSAGING_TOKEN:-dev-only-messaging-token}
       SIM_DB: /sim/messaging.db
       SIM_UNREACHABLE: ${SIM_UNREACHABLE:-}
+      REPAYDESK_WEBHOOK_URL: http://api:8000/webhooks/messaging
+      MESSAGING_WEBHOOK_SECRET: ${MESSAGING_WEBHOOK_SECRET:-dev-only-messaging-secret}
     volumes:
       - simdata:/sim
     ports:

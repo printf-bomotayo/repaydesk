@@ -18,6 +18,7 @@ import json
 import os
 import secrets
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -27,7 +28,7 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
 
 from repaydesk import approvals, db, records, staff, telemetry, views
-from repaydesk.adapters.webhooks import PayRailWebhooks
+from repaydesk.adapters.webhooks import MessagingWebhooks, PayRailWebhooks
 from repaydesk.ingest import store_line
 
 tracer = trace.get_tracer("repaydesk.api")
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI):
     app.state.session_secret = os.getenv("SESSION_SECRET") or secrets.token_urlsafe(32)
     app.state.pool = ConnectionPool(url, min_size=1, max_size=8, kwargs={"autocommit": True}, open=True)
     app.state.payrail = PayRailWebhooks(os.getenv("PAYRAIL_WEBHOOK_SECRET", "dev-only-payrail-secret"))
+    app.state.messaging = MessagingWebhooks(os.getenv("MESSAGING_WEBHOOK_SECRET", "dev-only-messaging-secret"))
     # Read-only use: a borrower's or loan's page asks core banking live. Without it, those pages
     # show the directory's copy and say so.
     app.state.core = None
@@ -135,6 +137,28 @@ async def payrail_webhook(request: Request) -> JSONResponse:
         return JSONResponse({"outcome": outcome, "line_id": stored.line_id})
 
 
+@app.post("/webhooks/messaging")
+async def messaging_webhook(request: Request) -> JSONResponse:
+    """A borrower's reply. Stored once, then read by rules (no model, no lookups) in the same
+    request: a reply with a date becomes a promise to pay; anything else waits for a person."""
+    from repaydesk.collections import replies
+    from repaydesk.domain import bank_today
+
+    body = await request.body()
+    hooks: MessagingWebhooks = app.state.messaging
+    if not hooks.verify(body, request.headers.get(MessagingWebhooks.SIGNATURE_HEADER, "")):
+        return JSONResponse({"outcome": "rejected"}, status_code=401)
+    try:
+        reply = hooks.to_reply(body)
+    except (ValueError, KeyError, TypeError):
+        return JSONResponse({"outcome": "rejected", "reason": "unreadable event"}, status_code=400)
+    with app.state.pool.connection() as conn:
+        out = replies.receive(conn, **reply, today=bank_today())
+    trace.get_current_span().set_attributes({"reply.outcome": out["outcome"] or "",
+                                             "reply.duplicate": out["duplicate"]})
+    return JSONResponse(out)
+
+
 # ---- staff -----------------------------------------------------------------------------------
 
 
@@ -145,6 +169,16 @@ class SignIn(BaseModel):
 
 class Rejection(BaseModel):
     reason: str
+
+
+class PromiseFromReply(BaseModel):
+    due_on: date
+    amount_kobo: int
+    loan_ref: str | None = None  # the loan the replied-to message was about, when absent
+
+
+class Note(BaseModel):
+    note: str
 
 
 class MessageApproval(BaseModel):
@@ -167,8 +201,9 @@ Me = Annotated[staff.Staff, Depends(signed_in)]
 
 
 def _refused(e: approvals.Refused) -> JSONResponse:
-    conflict = e.code in ("not_pending", "not_failed", "refused_by_gateway", "not_draft")
-    invalid = e.code in ("reason_required", "bad_split", "empty", "fails_policy", "nothing_due", "no_phone")
+    conflict = e.code in ("not_pending", "not_failed", "refused_by_gateway", "not_draft", "already_handled")
+    invalid = e.code in ("reason_required", "bad_split", "empty", "fails_policy", "nothing_due", "no_phone",
+                         "bad_amount", "bad_date", "loan_required", "wrong_loan")
     status = 409 if conflict else 422 if invalid else 503 if e.code == "core_unavailable" else 403
     return JSONResponse({"refused": e.code, "message": e.message}, status_code=status)
 
@@ -389,6 +424,42 @@ def reject_message(message_id: int, body: Rejection, who: Me):
             return decide.reject(conn, message_id, who, body.reason)
         except approvals.NotFound:
             raise HTTPException(404, "No such message.") from None
+        except approvals.Refused as e:
+            return _refused(e)
+
+
+@app.get("/collections/replies")
+def collections_replies(who: Me, waiting: bool | None = None, limit: int = 50, offset: int = 0) -> dict:
+    from repaydesk.collections import replies
+
+    with app.state.pool.connection() as conn:
+        return replies.replies(conn, waiting, min(max(limit, 1), 200), max(offset, 0))
+
+
+@app.post("/collections/replies/{inbound_id}/promise")
+def promise_from_reply(inbound_id: int, body: PromiseFromReply, who: Me):
+    from repaydesk.collections import replies
+    from repaydesk.domain import bank_today
+
+    with app.state.pool.connection() as conn:
+        try:
+            return replies.record_promise(conn, inbound_id, who, body.due_on, body.amount_kobo, bank_today(),
+                                          body.loan_ref)
+        except approvals.NotFound:
+            raise HTTPException(404, "No such reply.") from None
+        except approvals.Refused as e:
+            return _refused(e)
+
+
+@app.post("/collections/replies/{inbound_id}/close")
+def close_reply(inbound_id: int, body: Note, who: Me):
+    from repaydesk.collections import replies
+
+    with app.state.pool.connection() as conn:
+        try:
+            return replies.close(conn, inbound_id, who, body.note)
+        except approvals.NotFound:
+            raise HTTPException(404, "No such reply.") from None
         except approvals.Refused as e:
             return _refused(e)
 

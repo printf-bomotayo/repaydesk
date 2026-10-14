@@ -62,7 +62,7 @@ beforeEach(() => {
         ? [200, { token: "t1", staff: { id: body.staff_id, name: "Amaka Nwosu", role: "officer", limit_kobo: 50_000_000 }, expires_in: 1 }]
         : [401, { detail: "Wrong name or password." }];
     },
-    "/api/summary": () => [200, { lines: COUNTS, pending_proposals: 3, failed_postings: 2, drafts_waiting: 4 }],
+    "/api/summary": () => [200, { lines: COUNTS, pending_proposals: 3, failed_postings: 2, drafts_waiting: 4, replies_waiting: 1 }],
     "/api/today": () => [200, TODAY],
     "/api/lines": () => [200, { items: [LINE], total: 1, counts: COUNTS, limit: 50, offset: 0 }],
   };

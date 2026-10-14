@@ -2404,3 +2404,128 @@ What it does not prove:
 **Plan.** Milestone 4, collections: SMS/WhatsApp simulators; a manager approves the drafts.
 
 ---
+
+## Chunk 17 — replies and promises to pay ✅
+
+_Date: 2026-10-14_
+
+**What & why.** _Metaphor: the clerk who opens the post that comes back._ Some replies say exactly
+what's needed: "I go pay Friday." The clerk writes that in the promise book against the loan and
+puts a note on the file not to chase before Friday. Others don't: "I don pay" (check for the money),
+"how much is left?" (ring them), "stop" (someone senior decides). Those go in the manager's tray.
+The clerk never guesses a promise the borrower didn't make, because the bank will hold them to it.
+
+Chunk 16 sent the messages. This chunk takes the answers:
+
+- **The simulator answers back.** Each phone's conversation on the simulator's page has a box to
+  reply as the borrower; `POST /v1/replies` does the same for scripts. The reply goes to
+  Repaydesk as a provider's webhook would: `POST /webhooks/messaging`, signed with HMAC-SHA256,
+  with an id that makes a redelivery the same reply.
+- **Repaydesk stores it once and reads it**, `collections.replies`:
+  - it works out who replied (the directory's phone) and what they're answering (the last message
+    sent to that number, so the loan and the amount asked for);
+  - **the reader is rules, not a model**, in English and Nigerian Pidgin. Dates: today, tomorrow,
+    "next tomorrow", weekdays and "next Friday", "end of the month", 20/10, "15th oct", "25th".
+    Amounts: ₦30,000, NGN, naira, "20k".
+  - **a promise** needs a date from today up to a month away and a paying word, or a reply that is
+    little more than the date ("Friday"). It's recorded on the loan for the amount the reply names,
+    or else the amount the message asked for, replacing any earlier open promise. The morning list
+    already leaves a loan alone until its promise date (chunk 14), and the gateway won't send an
+    approved message after a promise (chunk 16).
+  - **everything else waits for a person**: says_paid ("I don pay"), question, stop, unclear (no
+    date; a date but not paying; a past date; more than a month away; two amounts; "paid" and a
+    date), and unknown_number.
+- **The Replies tab** on the Messages screen: replies waiting for a person, with what they
+  answered and how they were read. A manager or supervisor records the promise themselves (a date
+  up to a month away, an amount, on that borrower's loan) or closes the reply with a note. Replies
+  read as promises show the promise and that the rules recorded it.
+- **Navigation:** Messages counts drafts and replies waiting.
+- Migration 012: what a reply answers, how it was read, who dealt with it.
+
+**Decisions worth recording.**
+
+- *Rules, not a model, for promises.* A promise is something the bank will hold a borrower to, so
+  it should come from words a person can point to. The rules say why they read each reply as they
+  did (`reading.why`), and anything they aren't sure of goes to a person. A model could take the
+  unclear replies later, as a suggestion for the manager, not a recording.
+- *Read in the request.* The webhook stores the reply, then reads it in the same request. Unlike
+  matching a payment, reading a reply is quick and needs no lookups outside Repaydesk's database.
+- *One open promise per loan.* A later promise replaces the earlier one (cancelled, with a note),
+  so "not before the promised date" has one date.
+- *"Stop" is a person's decision.* The prototype has no opt-out register yet; a stop waits on the
+  Replies tab and the manager can reject drafts for that borrower.
+
+**Principles.** _Same returned-post metaphor._ *Record only the promise the borrower made.* *Say
+why each reply was read the way it was.* *What the rules can't read, a person does.* *One date
+to hold them to.*
+
+**Files.**
+
+- New:
+  - `src/repaydesk/collections/replies.py`;
+  - `migrations/012_replies.sql`;
+  - `tests/test_replies.py`.
+- Changed:
+  - `simulators/messaging.py` (replies, the conversation page, signed delivery);
+  - `adapters/webhooks.py` (`MessagingWebhooks`), `api.py` (the webhook and the reply routes),
+    `views.py` (replies waiting in the summary);
+  - `web/src/api.ts`, `components/Shell.tsx`, `pages/Messages.tsx`, `pages/Messages.test.tsx`, and
+    three tests' summary stubs;
+  - `compose.yaml`, `scripts/dev.py`, `README.md`.
+
+**Depends on / blocks.** Depends on sending (chunk 16) and the promises table (chunk 14). Blocks
+chunk 18: a promise kept or broken by what posts by its date, a broken one back on the list, the
+end-to-end demo, and the m4 tag.
+
+**Verification.** `ruff` clean.
+
+- `pytest`: 171 passed, 26 new, on a clean full run (4 min 48 s).
+  - **The reader:** 21 replies, each with what it should become, including Pidgin ("I go pay
+    Friday", "next tomorrow I go send am", "I don pay"), "I will call you on Friday" (a date, not
+    paying), a past date, more than a month away, two amounts, and "paid" with a date. A day and
+    month in December naming 5 January means next year.
+  - **Recording:** "I go pay Friday" becomes an open promise on the loan messaged, for the amount
+    asked, recorded by `rule:replies`; the loan leaves the morning list. A redelivery is the same
+    reply. A later promise with an amount replaces the first.
+  - **People:** says_paid and an unknown number wait; an officer can't close; a note is required;
+    a second close is refused. A person's promise is refused for a past date, more than a month
+    away, no amount, or another borrower's loan, then recorded on the reply's loan.
+  - **End to end in-process:** a forged signature is 401, an unreadable event 400. A reply typed in
+    the simulator's form is delivered, signed, to the API and becomes a promise. Redelivering it
+    keeps one promise. A question through `/v1/replies` arrives on the channel last used, waits,
+    and is closed over HTTP; a second close is 409.
+- The gateway: 48 passed with migration 012.
+- `vitest`: 38 passed, 2 new. A manager's promise for a date too far shows the refusal on the
+  card, then a fixed one is recorded with the amount typed. A reply is closed with a note. A
+  promise read by the rules shows as recorded from the reply, and an officer can only read.
+  `tsc` clean.
+- **On the stack:** the API applied migration 012. A reply "I go pay Friday" through the
+  simulator's API from the phone that got chunk 16's live message was delivered to the API
+  (`delivered: promise`). LN-2026-001565 has an open promise for 16 Oct for the ₦726,000 asked,
+  recorded by `rule:replies`.
+
+What it does not prove:
+
+- **How well the rules read real borrowers.** The replies tested are ones I wrote. Real replies
+  will be messier: misspellings, voice notes, other languages. The unclear tray is the safety net.
+- **The Replies tab live in a browser.** It's covered by its tests.
+- **Opt-outs.** "Stop" waits for a person; nothing stops future drafts automatically.
+- **The flaky full runs.** An earlier full run of the same code had 8 failures, two of them named
+  in `test_records.py` (the directory sync tests). I didn't capture the tracebacks. That file
+  passes alone, and the next full run passed whole. The failing run took 13 minutes against under
+  5 for the clean one, so load is the likely link, not a cause. This is the third sighting (chunk
+  14 had 7, chunk 15 one, which was the clock fix). Next time it goes to a logged run straight
+  away.
+
+**PR package.**
+
+- Subject: `Chunk 17: replies and promises to pay: read by rules, the rest to a person`
+- Description:
+  > The messaging simulator now sends borrowers' replies back as signed webhooks. Repaydesk stores
+  > each once, works out the loan it answers, and reads it by rules in English and Pidgin: a reply
+  > with a date and an intent to pay becomes a promise to pay on that loan; anything else waits on
+  > the Messages screen's Replies tab, where a manager records the promise or closes the reply.
+
+**Plan.** Milestone 4, collections: a reply with a date becomes a promise to pay.
+
+---

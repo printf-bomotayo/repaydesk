@@ -25,6 +25,8 @@ export interface Summary {
   failed_postings: number;
   /** Collections messages drafted and waiting for a portfolio manager. */
   drafts_waiting: number;
+  /** Borrowers' replies a person still has to deal with. */
+  replies_waiting: number;
 }
 
 export interface StoppedPosting {
@@ -315,6 +317,40 @@ export interface MessagePage {
   items: CollectionsMessage[];
   total: number;
   counts: Record<MessageStatus, number>;
+  limit: number;
+  offset: number;
+}
+
+export type ReplyOutcome = "promise" | "says_paid" | "question" | "stop" | "unclear" | "unknown_number";
+
+export interface Reply {
+  id: number;
+  channel: MessageChannel;
+  from_phone: string;
+  body: string;
+  received_at: string;
+  borrower_ref: string | null;
+  borrower_name: string | null;
+  loan_ref: string | null;
+  message_id: number | null;
+  /** The message it answers. */
+  answers: string | null;
+  /** What that message asked for. */
+  asked_kobo: number | null;
+  reading: { kind: string; due_on: string | null; amount_kobo: number | null; why: string } | null;
+  outcome: ReplyOutcome | null;
+  handled_at: string | null;
+  /** "rule:replies" when a promise was read from it; otherwise the person who dealt with it. */
+  handled_by: string | null;
+  handled_by_name: string | null;
+  note: string | null;
+  promise: { id: number; due_on: string; amount_kobo: number; status: string } | null;
+}
+
+export interface ReplyPage {
+  items: Reply[];
+  total: number;
+  waiting: number;
   limit: number;
   offset: number;
 }
@@ -665,6 +701,14 @@ export const api = {
     ),
   rejectMessage: (id: number, reason: string) =>
     request<{ message_id: number; status: "rejected" }>("POST", `/collections/messages/${id}/reject`, { body: { reason } }),
+  replies: (query: { waiting?: boolean; limit?: number; offset?: number }) =>
+    request<ReplyPage>("GET", "/collections/replies", {
+      query: { ...query, waiting: query.waiting === undefined ? undefined : String(query.waiting) },
+    }),
+  promiseFromReply: (id: number, body: { due_on: string; amount_kobo: number; loan_ref?: string }) =>
+    request<{ inbound_id: number; promise_id: number }>("POST", `/collections/replies/${id}/promise`, { body }),
+  closeReply: (id: number, note: string) =>
+    request<{ inbound_id: number; handled: true }>("POST", `/collections/replies/${id}/close`, { body: { note } }),
   runs: (query: { outcome?: string; limit?: number; offset?: number }) => request<RunPage>("GET", "/runs", { query }),
   run: (id: number | string) => request<RunDetail>("GET", `/runs/${id}`),
   audit: (query: { actor?: string; action?: string; subject?: string; before?: number | null; limit?: number }) =>

@@ -42,7 +42,7 @@ URLS = """
   Odoo ledger    http://127.0.0.1:18069                             (database: ledger, user from .env)
   Jaeger         http://127.0.0.1:16686
   Repaydesk      http://127.0.0.1:18082                             (sign in as amaka, kunle, tunde, hadiza or ngozi; STAFF_DEMO_PASSWORD in .env)
-  Messaging      http://127.0.0.1:18083                             (the SMS and WhatsApp simulator: each phone's inbox)
+  Messaging      http://127.0.0.1:18083                             (the SMS and WhatsApp simulator: each phone's conversation; reply as the borrower)
   API            http://127.0.0.1:18000/docs
   Postgres       127.0.0.1:15432
   Week's files   data/inbox/   (truth for evals: data/truth/)

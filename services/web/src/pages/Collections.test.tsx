@@ -42,7 +42,7 @@ beforeEach(() => {
       const p = url.pathname;
       if (p === "/api/config") return json(200, { bank_name: "Demo Microfinance Bank", links: { fineract_web: "", odoo: "", jaeger: "" } });
       if (p === "/api/auth/sign-in") return json(200, { token: "t", staff: STAFF, expires_in: 1 });
-      if (p === "/api/summary") return json(200, { lines: { new: 0, proposed: 0, approved: 0, posted: 0, suspense: 0, excluded: 0, duplicate: 0 }, pending_proposals: 0, failed_postings: 0, drafts_waiting: 0 });
+      if (p === "/api/summary") return json(200, { lines: { new: 0, proposed: 0, approved: 0, posted: 0, suspense: 0, excluded: 0, duplicate: 0 }, pending_proposals: 0, failed_postings: 0, drafts_waiting: 0, replies_waiting: 0 });
       if (p === "/api/collections") return json(200, MORNING);
       return json(404, { detail: "Not Found" });
     }),
