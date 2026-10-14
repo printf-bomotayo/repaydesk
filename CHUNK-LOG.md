@@ -2529,3 +2529,117 @@ What it does not prove:
 **Plan.** Milestone 4, collections: a reply with a date becomes a promise to pay.
 
 ---
+
+## Chunk 18 — promises kept and broken, and the milestone 4 demo ✅
+
+_Date: 2026-10-15_
+
+**What & why.** _Metaphor: the promise book, checked against the till._ Every morning the clerk
+runs a finger down the promise book. Where the money has come in, the promise is ticked as kept.
+Where the date has passed and it hasn't, the promise is crossed out, and the loan goes to the top
+of the day's list, marked "promised and didn't pay", until someone has written to the borrower
+about it. Then it's an ordinary late loan again.
+
+Chunk 17 wrote promises into the book. This chunk checks them, and runs milestone 4 end to end:
+
+- **Settling promises**, `collections.promises.settle`:
+  - **kept** once repayments of at least the promised amount have posted to the loan between the
+    day it was made and the promised date. Read live from Fineract, so a branch payment, a transfer
+    or a Repaydesk posting all count, and it's settled as soon as the money is there.
+  - **broken** the day after the promised date, if not: the borrower has all of the promised day.
+  - each with a note ("₦5,000.00 of ₦20,000.00 repaid by 08 Oct") and an audit row from
+    `service:promises`.
+  - The directory service runs it after each sync, every 15 minutes, with the core banking reads
+    it already has; `python -m repaydesk.collections.promises` runs it by hand.
+- **The morning list**, corrected:
+  - a broken promise brings the loan back first, as a broken promise, **until a message is
+    drafted about it**. Before, it stayed "broken" for good.
+  - the loan's **latest** promise decides, so a newer kept promise ends an older broken one.
+    Before, a kept promise was ignored and the older broken one still showed.
+- **The milestone 4 demo**, `python scripts/dev.py demo-m4` (`repaydesk.collections.demo`), against
+  the running stack:
+  1. two loans from the morning list, from borrowers with a phone;
+  2. drafted, from a fixed template by default (`--model` uses the drafting agent), through the
+     policy's checks;
+  3. approved by Ngozi through the API;
+  4. sent by the gateway to the simulator and found in each phone's inbox. Outside contact hours
+     it stops here and says when they'll go;
+  5. each borrower replies through the simulator ("I go pay tomorrow", "I go pay today"), and
+     each reply becomes a promise;
+  6. one pays: a statement line, matched by rule, approved by Amaka (and Tunde if needed), posted
+     by the gateway to Fineract and Odoo; the promise is checked and is kept;
+  7. the other doesn't: checked as of tomorrow, the promise is broken (the note and the audit say
+     "as of"), and the loan is at the top of the morning list as a broken promise.
+- **CI** runs it after the milestone 2 demo.
+
+**Found on the way.** *The morning list sorted "promise lapsed" ahead of "no promise".* The order
+put broken promises first with `(pr.status = 'broken') DESC NULLS LAST`. For a loan whose promise
+had lapsed but wasn't settled yet, that's false, not NULL, and `DESC` puts false ahead of the NULLs
+of loans with no promise at all. So those loans went to the top. The broken-promise test caught
+it; the flag is now never NULL.
+
+**Decisions worth recording.**
+
+- *Kept by what core banking shows, not by what Repaydesk posted.* Borrowers pay at branches and
+  by transfer as well as through matched statement lines; Fineract sees all of it.
+- *Settled with the directory sync.* Same reads, same rhythm, no new service. A promise is at most
+  15 minutes late to be marked.
+- *The demo checks a broken promise "as of tomorrow".* It can't wait a day. It says so on the
+  promise and in the audit, and only touches its own loans (`settle(..., loans=[...])`).
+- *A template for the demo's drafts by default.* API credit is out, and the demo should run
+  without a key. The drafts still go through the policy's checks and are marked
+  `demo:template`, not the agent.
+
+**Principles.** _Same promise-book metaphor._ *Tick a promise when the money is in the till.*
+*Give them all of the promised day.* *A broken promise goes to the top once, not forever.*
+
+**Files.**
+
+- New:
+  - `src/repaydesk/collections/promises.py`, `collections/demo.py`;
+  - `tests/test_promises.py`.
+- Changed:
+  - `collections/queue.py` (broken until followed up; the latest promise decides; the sort);
+  - `directory.py` (settles promises after each sync);
+  - `compose.yaml` (the demo service: messaging and model settings), `scripts/dev.py`
+    (`demo-m4`), `Makefile`, `.github/workflows/ci.yml`, `README.md`.
+
+**Depends on / blocks.** Depends on chunks 14 to 17. Completes milestone 4.
+
+**Verification.** `ruff` clean.
+
+- `pytest`: 175 passed, 4 new.
+  - **Kept and broken:** two payments that add up keep a promise before its date. A short payment
+    leaves it open on the promised day and breaks it the day after. A payment made before the
+    promise doesn't count. Settling again changes nothing. Audit: one kept, two broken.
+  - **As of:** checking as of another day says so on the promise and in the audit.
+  - **The list:** a promised loan is left alone; once broken it's first, as a broken promise.
+    After a follow-up is sent it's back in its own bucket, not first, and the broken-promise filter
+    is empty. A newer kept promise ends an older broken one.
+- The gateway: 48 passed.
+- **On the stack, outside contact hours** (00:15 Lagos, 15 Oct): the demo took LN-2026-001120 and
+  LN-2026-000151 from a list of 936, drafted both from the template (11 of 11 checks each), Ngozi
+  approved both through the API, and it stopped at step 4: held until Thu 15 Oct 08:00.
+
+What it does not prove:
+
+- **Steps 4 to 7 of the demo live.** They need contact hours. Each part has been checked on its
+  own (sending in chunk 16, a reply becoming a promise in chunk 17, posting in milestone 2,
+  settling in the tests above), but not the demo running through them. Milestone 4 is tagged only
+  once it has: see below.
+- **The directory service settling promises live.** It's the same call the tests make, after a
+  sync; I haven't watched it settle one on the stack.
+
+**PR package.**
+
+- Subject: `Chunk 18: promises kept and broken, and the milestone 4 demo`
+- Description:
+  > Settles promises to pay against the loan's repayments in Fineract: kept once the promised
+  > amount has been repaid, broken the day after its date. Runs after each directory sync. A
+  > broken promise puts the loan at the top of the morning list until a follow-up is drafted; the
+  > latest promise decides. Adds the milestone 4 demo (`python scripts/dev.py demo-m4`) and runs it
+  > in CI.
+
+**Plan.** Milestone 4, collections: done when the demo passes in contact hours, then tag `m4`.
+
+---

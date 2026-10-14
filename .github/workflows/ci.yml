@@ -133,6 +133,10 @@ jobs:
           p = json.load(sys.stdin)["postings"]
           assert p["posted_today"] >= 4 and p["failed"] == 0 and p["stopped"] == [], p
           print(p["posted_today"], "posted today, none stopped")'
+      # Sending waits for contact hours (08:00 to 18:00 Lagos, Monday to Saturday): outside them the
+      # demo checks drafting, the policy and approval, and stops where the gateway holds the messages.
+      - name: "milestone 4 end to end: drafted, approved, sent, replied to, a promise kept and one broken"
+        run: python scripts/dev.py demo-m4
       - run: pip install -e "services/core[dev]"
       - name: contract tests against Fineract and Odoo
         working-directory: services/core

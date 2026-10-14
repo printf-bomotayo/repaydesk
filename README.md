@@ -54,7 +54,13 @@ ingested and matched by rule, Amaka and Tunde approve through the API, the gatew
 demo finds each repayment in Fineract and each journal entry in Odoo. Then open **Today**.
 [`docs/demo.md`](docs/demo.md) is the same story to click through, for showing someone.
 
-Other tasks: `seed`, `ingest`, `match`, `score`, `investigate`, `eval`, `demo`, `mcp`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
+To see milestone 4, run `python scripts/dev.py demo-m4` between 08:00 and 18:00 Lagos time, Monday
+to Saturday (messages only go out then): two late loans get a message drafted under the policy,
+approved by Ngozi, sent to the simulator, and answered with a promise to pay. One borrower pays,
+through the milestone 2 path, and the promise is kept; the other doesn't, and the loan comes back
+to the top of the morning list. `--model` drafts with the agent instead of a template.
+
+Other tasks: `seed`, `ingest`, `match`, `score`, `investigate`, `draft`, `eval`, `demo`, `demo-m4`, `mcp`, `down`, `reset`, `test`, `itest`, `lint`, `urls`,
 and for the web app `web` (live reload on http://127.0.0.1:5173, needs Node 24) and `webtest`
 (`python scripts/dev.py <task>`).
 
@@ -204,10 +210,15 @@ Built so far (milestone 1):
   and the borrower isn't messaged again before that date. "I don pay", a question, "stop" or
   anything unclear waits on the Messages screen's Replies tab, where the manager records the
   promise or closes the reply with a note. To try it, reply from a phone on the simulator's page.
+- **Promises kept and broken** (chunk 18): after each directory sync, every open promise is
+  checked against the loan's repayments in Fineract: kept once at least the promised amount has
+  been repaid since it was made, broken the day after its date if not. A broken promise puts the
+  loan at the top of the morning list as its own kind of message, until the follow-up is drafted.
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract
-  and Odoo.
+  and Odoo. Then the milestone 4 demo: in contact hours, all of it; outside them, up to the gateway
+  holding the approved messages.
 
 Decisions are recorded in [`docs/adr/`](docs/adr/).
 

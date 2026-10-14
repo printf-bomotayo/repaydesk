@@ -18,30 +18,35 @@ from repaydesk.collections.policy import BUCKET_LABEL, BUCKETS, MAX_MESSAGES_PER
 _BUCKET_SQL = ("CASE WHEN l.days_late BETWEEN 1 AND 7 THEN 'reminder' WHEN l.days_late BETWEEN 8 AND 30 THEN "
                "'follow_up' WHEN l.days_late BETWEEN 31 AND 90 THEN 'arrangement' ELSE 'recovery' END")
 
+# A broken promise brings the loan back as its own kind of message, first, until a message is
+# drafted about it; after that the loan is late like any other.
+_BROKEN = "coalesce(pr.status = 'broken' AND coalesce(r.last_drafted < pr.resolved_at, true), false)"
+
 _DUE = f"""
 WITH recent AS (
     SELECT loan_ref, count(*) FILTER (WHERE created_at > now() - interval '7 days' AND status IN ('approved', 'sent'))
                AS last7,
-           count(*) FILTER (WHERE status IN ('draft', 'approved')) AS waiting, max(sent_at) AS last_sent
+           count(*) FILTER (WHERE status IN ('draft', 'approved')) AS waiting, max(sent_at) AS last_sent,
+           max(created_at) AS last_drafted
     FROM collection_messages GROUP BY loan_ref
-), promised AS (
-    SELECT DISTINCT ON (loan_ref) loan_ref, status, due_on, amount_kobo FROM promises
-    WHERE status IN ('open', 'broken') ORDER BY loan_ref, made_on DESC, id DESC
+), promised AS (  -- the latest promise, whatever became of it: a kept one ends an older broken one
+    SELECT DISTINCT ON (loan_ref) loan_ref, status, due_on, amount_kobo, resolved_at FROM promises
+    WHERE status <> 'cancelled' ORDER BY loan_ref, made_on DESC, id DESC
 )
 SELECT l.ref, l.borrower_ref, b.name, b.branch_name, l.days_late, l.arrears_kobo, l.outstanding_kobo,
-       CASE WHEN pr.status = 'broken' THEN 'broken_promise' ELSE {_BUCKET_SQL} END AS bucket,
+       CASE WHEN {_BROKEN} THEN 'broken_promise' ELSE {_BUCKET_SQL} END AS bucket,
        r.last_sent, pr.status, pr.due_on, pr.amount_kobo, count(*) OVER () AS total
 FROM loans l
 JOIN borrowers b ON b.ref = l.borrower_ref
 LEFT JOIN recent r ON r.loan_ref = l.ref
-LEFT JOIN promised pr ON pr.loan_ref = l.ref
+LEFT JOIN promised pr ON pr.loan_ref = l.ref AND pr.status IN ('open', 'broken')
 WHERE l.status = 'active' AND l.arrears_kobo > 0 AND l.days_late BETWEEN 1 AND 90
   AND coalesce(r.waiting, 0) = 0  -- a draft, or an approved message not yet sent
   AND coalesce(r.last7, 0) < {MAX_MESSAGES_PER_WEEK}
   AND NOT coalesce(pr.status = 'open' AND pr.due_on >= %(today)s, false)  -- no promise: NULL, so coalesce
-  AND (%(bucket)s::text IS NULL OR (CASE WHEN pr.status = 'broken' THEN 'broken_promise' ELSE {_BUCKET_SQL} END)
+  AND (%(bucket)s::text IS NULL OR (CASE WHEN {_BROKEN} THEN 'broken_promise' ELSE {_BUCKET_SQL} END)
        = %(bucket)s)
-ORDER BY (pr.status = 'broken') DESC NULLS LAST, l.days_late DESC, l.arrears_kobo DESC, l.ref
+ORDER BY {_BROKEN} DESC, l.days_late DESC, l.arrears_kobo DESC, l.ref
 LIMIT %(limit)s OFFSET %(offset)s
 """
 

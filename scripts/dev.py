@@ -15,6 +15,8 @@
     python scripts/dev.py eval      the investigator's eval: 60 hard cases, dry, graded (--limit N; about $1.50)
     python scripts/dev.py demo      milestone 2 end to end: a new statement, matched, approved, posted, checked
                                     (--for-review: stop after matching; approve in the web app)
+    python scripts/dev.py demo-m4   milestone 4 end to end: drafted, approved, sent, replied to, a promise kept
+                                    and one broken (sending needs contact hours; --model drafts with the agent)
     python scripts/dev.py directory copy the book from Fineract into the borrower directory now
     python scripts/dev.py gateway   the posting gateway's tests (.NET; database tests use the compose Postgres)
     python scripts/dev.py test      unit, contract and database tests (database tests skip without the stack)
@@ -192,6 +194,11 @@ def main(task: str) -> None:
         })
     elif task == "demo":
         run("docker", "compose", "run", "--rm", "--build", "demo", "python", "-m", "repaydesk.demo", *sys.argv[2:])
+    elif task == "demo-m4":
+        # Milestone 4 end to end: drafted, approved, sent, replied to, one promise kept, one broken.
+        # Sending needs contact hours (08:00 to 18:00 Lagos, Monday to Saturday). --model drafts with the agent.
+        run("docker", "compose", "run", "--rm", "--build", "demo", "python", "-m", "repaydesk.collections.demo",
+            *sys.argv[2:])
     elif task == "directory":
         # The directory service does this every 15 minutes; this is for when you can't wait.
         run("docker", "compose", "run", "--rm", "--build", "directory", "python", "-m", "repaydesk.directory")

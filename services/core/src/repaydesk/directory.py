@@ -6,7 +6,8 @@ Repaydesk. Each sync reads the whole book through the core banking adapter, writ
 and removes what core banking no longer has, in one transaction, so a page never sees half a sync.
 
     python -m repaydesk.directory               # sync once
-    python -m repaydesk.directory --every 900   # sync every 15 minutes (the compose service)
+    python -m repaydesk.directory --every 900   # sync every 15 minutes (the compose service), and
+                                                # settle promises to pay after each sync
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from opentelemetry import trace
 
 from repaydesk import db, telemetry
 from repaydesk.adapters.ports import CoreBankingDirectory
+from repaydesk.collections import promises
+from repaydesk.domain import bank_today
 
 tracer = trace.get_tracer("repaydesk.directory")
 
@@ -126,6 +129,11 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     log(f"{counts['borrowers']} borrowers, {counts['loans']} loans, {counts['changed']} changed, "
                         f"in {time.monotonic() - started:.0f}s")
+                # Promises to pay are settled by what core banking shows was repaid: the same reads,
+                # the same rhythm. One that fails is tried again at the next sync.
+                settled = promises.settle(conn, core, bank_today())
+                if settled["kept"] or settled["broken"]:
+                    log(f"promises: {settled['kept']} kept, {settled['broken']} broken, {settled['open']} open")
             except Exception as e:  # noqa: BLE001 - the loop keeps going; the failure is recorded and shown
                 log(f"sync failed: {type(e).__name__}: {e}")
                 if not args.every:
