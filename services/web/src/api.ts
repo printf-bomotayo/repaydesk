@@ -23,6 +23,8 @@ export interface Summary {
   lines: Record<Status, number>;
   pending_proposals: number;
   failed_postings: number;
+  /** Collections messages drafted and waiting for a portfolio manager. */
+  drafts_waiting: number;
 }
 
 export interface StoppedPosting {
@@ -271,6 +273,51 @@ export interface DrafterVerdict {
 }
 
 export type MessageChannel = "sms" | "whatsapp";
+
+export type MessageStatus = "draft" | "approved" | "rejected" | "sent" | "failed";
+
+export interface CollectionsMessage {
+  id: number;
+  loan_ref: string;
+  borrower_ref: string;
+  borrower_name: string | null;
+  branch_name: string | null;
+  bucket: CollectionsBucket;
+  bucket_label: string;
+  channel: MessageChannel;
+  body: string;
+  amount_due_kobo: number;
+  checks: { check: string; ok: boolean; detail: string }[];
+  passes_policy: boolean;
+  /** "agent:collector", or a person's id. */
+  drafted_by: string;
+  run_id: number | null;
+  /** The drafter's one line to the manager. */
+  note: string | null;
+  created_at: string;
+  status: MessageStatus;
+  decided_by: string | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  reject_reason: string | null;
+  /** The first moment inside contact hours it may go. */
+  send_after: string | null;
+  sent_at: string | null;
+  provider_id: string | null;
+  error: string | null;
+  attempts: number;
+  /** What the drafter wrote, when a person edited it before approving. */
+  drafted_body: string | null;
+  days_late: number | null;
+}
+
+export interface MessagePage {
+  items: CollectionsMessage[];
+  total: number;
+  counts: Record<MessageStatus, number>;
+  limit: number;
+  offset: number;
+}
 
 export type CollectionsBucket = "reminder" | "follow_up" | "arrangement" | "broken_promise";
 
@@ -608,6 +655,16 @@ export const api = {
   find: (q: string) => request<Found>("GET", "/find", { query: { q } }),
   collections: (query: { bucket?: string; limit?: number; offset?: number }) =>
     request<CollectionsMorning>("GET", "/collections", { query }),
+  messages: (query: { status?: MessageStatus; limit?: number; offset?: number }) =>
+    request<MessagePage>("GET", "/collections/messages", { query }),
+  approveMessage: (id: number, body?: string) =>
+    request<{ message_id: number; status: "approved"; edited: boolean; send_after: string }>(
+      "POST",
+      `/collections/messages/${id}/approve`,
+      { body: body === undefined ? {} : { body } },
+    ),
+  rejectMessage: (id: number, reason: string) =>
+    request<{ message_id: number; status: "rejected" }>("POST", `/collections/messages/${id}/reject`, { body: { reason } }),
   runs: (query: { outcome?: string; limit?: number; offset?: number }) => request<RunPage>("GET", "/runs", { query }),
   run: (id: number | string) => request<RunDetail>("GET", `/runs/${id}`),
   audit: (query: { actor?: string; action?: string; subject?: string; before?: number | null; limit?: number }) =>

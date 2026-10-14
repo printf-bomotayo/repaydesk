@@ -80,7 +80,9 @@ export function Collections() {
         <div className="stat">
           <span className="k">Drafts waiting for approval</span>
           <span className="v">{data.drafts_waiting.toLocaleString()}</span>
-          <span className="d">the drafting agent writes them</span>
+          <span className="d">
+            the drafting agent writes them · <Link to="/messages">decide</Link>
+          </span>
         </div>
         <div className="stat">
           <span className="k">Promises to pay, open</span>

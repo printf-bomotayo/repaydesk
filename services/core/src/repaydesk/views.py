@@ -207,13 +207,14 @@ def audit(conn: psycopg.Connection, actor: str | None = None, action: str | None
 
 
 def summary(conn: psycopg.Connection) -> dict:
-    """Small counts for the navigation: lines by status, proposals waiting for a person, and
-    postings that stopped."""
+    """Small counts for the navigation: lines by status, proposals waiting for a person, postings
+    that stopped, and collections messages waiting for approval."""
     by_status = dict(conn.execute("SELECT status, count(*) FROM payment_lines GROUP BY 1").fetchall())
     pending = conn.execute("SELECT count(*) FROM proposals WHERE status = 'pending'").fetchone()[0]
     failed = conn.execute("SELECT count(*) FROM posting_outbox WHERE status = 'failed'").fetchone()[0]
+    drafts = conn.execute("SELECT count(*) FROM collection_messages WHERE status = 'draft'").fetchone()[0]
     return {"lines": {s: by_status.get(s, 0) for s in STATUSES}, "pending_proposals": pending,
-            "failed_postings": failed}
+            "failed_postings": failed, "drafts_waiting": drafts}
 
 
 # ---- today -------------------------------------------------------------------------------------

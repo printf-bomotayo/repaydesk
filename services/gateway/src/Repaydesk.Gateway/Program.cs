@@ -1,5 +1,6 @@
-// Repaydesk's posting gateway: the only component that writes to core banking and the ledger
-// (ADR 0002). It drains posting_outbox, which the API fills when people approve a match.
+// Repaydesk's gateway: the only component that writes to core banking and the ledger, or talks to
+// borrowers (ADR 0002). It drains posting_outbox, which the API fills when people approve a match,
+// and sends the collections messages a portfolio manager has approved.
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -29,6 +30,9 @@ builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(
 builder.Services.AddSingleton<ICoreBanking>(_ => new FineractCoreBanking(Http(), settings));
 builder.Services.AddSingleton<ILedger>(_ => new OdooLedger(Http(), settings));
 builder.Services.AddSingleton<Outbox>();
+builder.Services.AddSingleton<IMessaging>(_ => new HttpMessaging(Http(), settings));
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<MessageOutbox>();
 builder.Services.AddHostedService<Drainer>();
 
 // Traces to Jaeger through the collector when compose sets the endpoint; nothing otherwise.

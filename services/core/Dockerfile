@@ -6,6 +6,8 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-cache-dir . && rm -rf /root/.cache
+# Where the messaging simulator keeps its store: a named volume mounted here takes this owner.
+RUN mkdir /sim && chown repaydesk /sim
 
 USER repaydesk
 ENV PYTHONUNBUFFERED=1

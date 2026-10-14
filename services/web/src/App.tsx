@@ -4,6 +4,7 @@ import { Loading, ToastProvider } from "./components/common";
 import { Review } from "./pages/Review";
 import { Audit } from "./pages/Audit";
 import { Collections } from "./pages/Collections";
+import { Messages } from "./pages/Messages";
 import { BorrowerDetail, Borrowers } from "./pages/Borrowers";
 import { Ingestion } from "./pages/Ingestion";
 import { Later } from "./pages/Later";
@@ -35,6 +36,7 @@ function Routed() {
         <Route path="/loans/:ref" element={<LoanDetail />} />
         <Route path="/ingestion" element={<Ingestion />} />
         <Route path="/collections" element={<Collections />} />
+        <Route path="/messages" element={<Messages />} />
         <Route path="/runs" element={<Runs />} />
         <Route path="/runs/:id" element={<RunPage />} />
         <Route path="/audit" element={<Audit />} />

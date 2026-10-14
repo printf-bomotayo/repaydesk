@@ -147,6 +147,10 @@ class Rejection(BaseModel):
     reason: str
 
 
+class MessageApproval(BaseModel):
+    body: str | None = None  # the edited message; the draft as it stands when absent
+
+
 def signed_in(authorization: Annotated[str | None, Header()] = None) -> staff.Staff:
     token = (authorization or "").removeprefix("Bearer ").strip()
     staff_id = staff.read_token(token, app.state.session_secret) if token else None
@@ -163,8 +167,9 @@ Me = Annotated[staff.Staff, Depends(signed_in)]
 
 
 def _refused(e: approvals.Refused) -> JSONResponse:
-    conflict = e.code in ("not_pending", "not_failed", "refused_by_gateway")
-    status = 409 if conflict else 422 if e.code in ("reason_required", "bad_split") else 403
+    conflict = e.code in ("not_pending", "not_failed", "refused_by_gateway", "not_draft")
+    invalid = e.code in ("reason_required", "bad_split", "empty", "fails_policy", "nothing_due", "no_phone")
+    status = 409 if conflict else 422 if invalid else 503 if e.code == "core_unavailable" else 403
     return JSONResponse({"refused": e.code, "message": e.message}, status_code=status)
 
 
@@ -350,6 +355,42 @@ def collections_morning(who: Me, bucket: str | None = None, limit: int = 50, off
         raise HTTPException(422, "bucket is one of reminder, follow_up, arrangement, broken_promise")
     with app.state.pool.connection() as conn:
         return queue.overview(conn, bank_today(), bucket, min(max(limit, 1), 200), max(offset, 0))
+
+
+@app.get("/collections/messages")
+def collections_messages(who: Me, status: str = "draft", limit: int = 50, offset: int = 0) -> dict:
+    from repaydesk.collections import decide
+
+    if status not in decide.STATUSES:
+        raise HTTPException(422, f"status is one of {', '.join(decide.STATUSES)}")
+    with app.state.pool.connection() as conn:
+        return decide.messages(conn, status, min(max(limit, 1), 200), max(offset, 0))
+
+
+@app.post("/collections/messages/{message_id}/approve")
+def approve_message(message_id: int, body: MessageApproval, who: Me):
+    from repaydesk.collections import decide
+
+    with app.state.pool.connection() as conn:
+        try:
+            return decide.approve(conn, app.state.core, message_id, who, body.body)
+        except approvals.NotFound:
+            raise HTTPException(404, "No such message.") from None
+        except approvals.Refused as e:
+            return _refused(e)
+
+
+@app.post("/collections/messages/{message_id}/reject")
+def reject_message(message_id: int, body: Rejection, who: Me):
+    from repaydesk.collections import decide
+
+    with app.state.pool.connection() as conn:
+        try:
+            return decide.reject(conn, message_id, who, body.reason)
+        except approvals.NotFound:
+            raise HTTPException(404, "No such message.") from None
+        except approvals.Refused as e:
+            return _refused(e)
 
 
 @app.get("/ingestion")

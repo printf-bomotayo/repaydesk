@@ -2,8 +2,9 @@
 
 Read from the borrower directory (Repaydesk's copy of the book, ADR 0008), Repaydesk's own messages
 and promises. A loan is due a message when it is 1 to 90 days late with arrears, has no open
-promise still in date, has had fewer than two messages in seven days, and has no draft waiting. A
-broken promise puts a loan back on the list as its own kind of message.
+promise still in date, has had fewer than two messages in seven days, and has no message waiting
+(a draft, or approved and not yet sent). A broken promise puts a loan back on the list as its own
+kind of message.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ _DUE = f"""
 WITH recent AS (
     SELECT loan_ref, count(*) FILTER (WHERE created_at > now() - interval '7 days' AND status IN ('approved', 'sent'))
                AS last7,
-           count(*) FILTER (WHERE status = 'draft') AS drafts, max(sent_at) AS last_sent
+           count(*) FILTER (WHERE status IN ('draft', 'approved')) AS waiting, max(sent_at) AS last_sent
     FROM collection_messages GROUP BY loan_ref
 ), promised AS (
     SELECT DISTINCT ON (loan_ref) loan_ref, status, due_on, amount_kobo FROM promises
@@ -35,7 +36,7 @@ JOIN borrowers b ON b.ref = l.borrower_ref
 LEFT JOIN recent r ON r.loan_ref = l.ref
 LEFT JOIN promised pr ON pr.loan_ref = l.ref
 WHERE l.status = 'active' AND l.arrears_kobo > 0 AND l.days_late BETWEEN 1 AND 90
-  AND coalesce(r.drafts, 0) = 0
+  AND coalesce(r.waiting, 0) = 0  -- a draft, or an approved message not yet sent
   AND coalesce(r.last7, 0) < {MAX_MESSAGES_PER_WEEK}
   AND NOT coalesce(pr.status = 'open' AND pr.due_on >= %(today)s, false)  -- no promise: NULL, so coalesce
   AND (%(bucket)s::text IS NULL OR (CASE WHEN pr.status = 'broken' THEN 'broken_promise' ELSE {_BUCKET_SQL} END)

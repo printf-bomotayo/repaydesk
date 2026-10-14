@@ -216,18 +216,21 @@ function Proposal({ item, readOnly, onDecided }: { item: QueueItem; readOnly: bo
   );
 }
 
-function RejectForm({
+/** Why a person said no: a short list of the usual reasons, or their own words. */
+export function RejectForm({
   id,
   busy,
   onReject,
   onCancel,
+  reasons = REASONS,
 }: {
   id: number;
   busy: boolean;
   onReject: (reason: string) => void;
   onCancel: () => void;
+  reasons?: string[];
 }) {
-  const [choice, setChoice] = useState(REASONS[0]);
+  const [choice, setChoice] = useState(reasons[0]);
   const [other, setOther] = useState("");
   const reason = choice === OTHER ? other.trim() : choice;
 
@@ -240,7 +243,7 @@ function RejectForm({
     <form className="reject-form" onSubmit={submit}>
       <label htmlFor={`why-${id}`}>Reason</label>
       <select id={`why-${id}`} value={choice} onChange={(e) => setChoice(e.target.value)} autoFocus>
-        {[...REASONS, OTHER].map((r) => (
+        {[...reasons, OTHER].map((r) => (
           <option key={r}>{r}</option>
         ))}
       </select>

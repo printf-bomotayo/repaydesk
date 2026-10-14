@@ -7,7 +7,8 @@ using NpgsqlTypes;
 
 namespace Repaydesk.Gateway;
 
-public enum Outcome { Nothing, Posted, Retrying, Failed, Refused }
+/// <summary>What one turn of an outbox did. <c>Deferred</c>: a message held until contact hours.</summary>
+public enum Outcome { Nothing, Posted, Sent, Deferred, Retrying, Failed, Refused }
 
 /// <summary>
 /// Posts one outbox row at a time. The row stays locked (<c>FOR UPDATE SKIP LOCKED</c>) while the

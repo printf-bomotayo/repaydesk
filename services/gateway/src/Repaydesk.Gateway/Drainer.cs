@@ -26,23 +26,25 @@ public static class Heartbeat
 }
 
 /// <summary>
-/// Drains the outbox until nothing is ready, then waits: for Postgres to say a posting arrived
-/// (<c>LISTEN posting_outbox</c>, raised by a trigger), or for the poll interval, which also picks
-/// up postings whose retry time has come.
+/// Drains both outboxes, postings and messages, until nothing is ready, then waits: for Postgres to
+/// say something arrived (<c>LISTEN posting_outbox</c> and <c>message_outbox</c>, raised by
+/// triggers), or for the poll interval, which also picks up retries and messages held for contact
+/// hours.
 /// </summary>
-public sealed class Drainer(NpgsqlDataSource db, Outbox outbox, Settings settings, ILogger<Drainer> log) : BackgroundService
+public sealed class Drainer(NpgsqlDataSource db, Outbox outbox, MessageOutbox messages, Settings settings, ILogger<Drainer> log)
+    : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stop)
     {
         var wake = Channel.CreateBounded<bool>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
         var listening = Listen(wake.Writer, stop);
-        log.LogInformation("Posting gateway started; polling every {Poll}s", settings.Poll.TotalSeconds);
+        log.LogInformation("Gateway started; polling every {Poll}s", settings.Poll.TotalSeconds);
         while (!stop.IsCancellationRequested)
         {
             Heartbeat.Beat();
             try
             {
-                while (await outbox.PostNextAsync(stop) != Outcome.Nothing)
+                while (await outbox.PostNextAsync(stop) != Outcome.Nothing | await messages.SendNextAsync(stop) != Outcome.Nothing)
                     Heartbeat.Beat();
             }
             catch (Exception e) when (!stop.IsCancellationRequested)
@@ -71,7 +73,7 @@ public sealed class Drainer(NpgsqlDataSource db, Outbox outbox, Settings setting
             {
                 await using var conn = await db.OpenConnectionAsync(stop);
                 conn.Notification += (_, _) => wake.TryWrite(true);
-                await using (var cmd = new NpgsqlCommand("LISTEN posting_outbox", conn))
+                await using (var cmd = new NpgsqlCommand("LISTEN posting_outbox; LISTEN message_outbox", conn))
                     await cmd.ExecuteNonQueryAsync(stop);
                 wake.TryWrite(true); // anything that arrived while we weren't listening
                 while (true)
@@ -83,7 +85,7 @@ public sealed class Drainer(NpgsqlDataSource db, Outbox outbox, Settings setting
             }
             catch (Exception e)
             {
-                log.LogWarning("Listening for new postings failed ({Error}); polling until it reconnects", e.Message);
+                log.LogWarning("Listening for new postings and messages failed ({Error}); polling until it reconnects", e.Message);
                 try { await Task.Delay(TimeSpan.FromSeconds(5), stop); }
                 catch (OperationCanceledException) { return; }
             }

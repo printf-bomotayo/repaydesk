@@ -45,7 +45,8 @@ public sealed class TestDatabase : IAsyncDisposable
               ('amaka', 'Amaka Nwosu', 'officer', 50000000, 'x'),
               ('kunle', 'Kunle Bello', 'officer', 50000000, 'x'),
               ('tunde', 'Tunde Adeyemi', 'supervisor', 500000000, 'x'),
-              ('hadiza', 'Hadiza Lawal', 'auditor', 0, 'x')
+              ('hadiza', 'Hadiza Lawal', 'auditor', 0, 'x'),
+              ('ngozi', 'Ngozi Eze', 'manager', 0, 'x')
             """, c).ExecuteNonQueryAsync();
         return db;
     }
@@ -96,6 +97,31 @@ public sealed class TestDatabase : IAsyncDisposable
             """, ("pid", pid), ("line", lineId), ("key", key), ("amount", amount), ("alloc", json), ("by", approvers)))!;
         await tx.CommitAsync();
         return (outboxId, lineId, key);
+    }
+
+    /// <summary>
+    /// What the API does when a portfolio manager approves a draft (collections/decide.py): the
+    /// message approved with its checks, the borrower's number, its key and when it may go.
+    /// </summary>
+    public async Task<(long Id, string Key)> ApprovedMessageAsync(DateTimeOffset sendAfter, string loan = "LN-2026-000001",
+        string phone = "07005123456", string decidedBy = "ngozi", bool checksPass = true)
+    {
+        await using var c = await Source.OpenConnectionAsync();
+        var checks = checksPass
+            ? """[{"check": "no_threats", "ok": true, "detail": "no threats"}]"""
+            : """[{"check": "no_threats", "ok": false, "detail": "mentions the police"}]""";
+        var id = (long)(await Scalar(c, """
+            INSERT INTO collection_messages (loan_ref, borrower_ref, bucket, channel, body, amount_due_kobo, drafted_by, checks)
+            VALUES (@loan, 'CUS-000001', 'follow_up', 'sms', 'Good morning Zainab, ...', 6050000, 'agent:collector', @checks::jsonb)
+            RETURNING id
+            """, ("loan", loan), ("checks", checks)))!;
+        var key = $"CM-{id}";
+        await Exec(c, """
+            UPDATE collection_messages SET status = 'approved', decided_by = @by, decided_at = @after,
+                   idempotency_key = @key, to_phone = @phone, send_after = @after
+            WHERE id = @id
+            """, ("id", id), ("by", decidedBy), ("after", sendAfter.ToUniversalTime()), ("key", key), ("phone", phone));
+        return (id, key);
     }
 
     public async Task<object?> ScalarAsync(string sql, params (string, object)[] args)

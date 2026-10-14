@@ -44,6 +44,7 @@ collection journals in Odoo, and writes a week of incoming payments to `data/inb
 | Fineract staff screens | http://127.0.0.1:18081 (Mifos X web app; login `mifos` / `password`, tenant `default`) |
 | Odoo ledger | http://127.0.0.1:18069 (database `ledger`, login `admin` / `admin`; Invoicing → Accounting → Journal Entries) |
 | Jaeger traces | http://127.0.0.1:16686 |
+| Messaging simulator | http://127.0.0.1:18083 (each phone's inbox: what borrowers received; nothing leaves the machine) |
 | Repaydesk API | http://127.0.0.1:18000/docs (same logins; `POST /auth/sign-in`, then **Authorize** with the token) |
 | Postgres | 127.0.0.1:15432 |
 | The week's payment files | `data/inbox/` |
@@ -191,6 +192,12 @@ Built so far (milestone 1):
   can't go until a person fixes it. Drafts wait for the portfolio manager; nothing is sent.
   `python scripts/dev.py draft --limit 10` (needs `ANTHROPIC_API_KEY`). Each run shows on Agent
   runs with what it was told, the message, and the checks.
+- **Approve and send** (chunk 16): on the Messages screen a portfolio manager (or supervisor)
+  approves a draft, edits it, or rejects it with a reason. Approval checks the message again
+  against the loan as core banking shows it then. The gateway sends approved messages to an SMS
+  and WhatsApp simulator, only 08:00 to 18:00 Lagos time, Monday to Saturday, and first checks
+  again what may have changed: the approver's right, two messages a week, a promise made since.
+  A provider outage is retried, and a message is never sent twice.
 - **CI**: lint and tests on every push, the gateway's against Postgres. On main, the full stack
   comes up, gets seeded, the contract tests run against it, and the milestone 2 demo runs: a new
   statement ingested, matched, approved by two people where needed, posted, and found in Fineract

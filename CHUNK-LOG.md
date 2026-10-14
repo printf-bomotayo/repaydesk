@@ -2269,3 +2269,138 @@ What it does not prove:
 **Plan.** Milestone 4, collections: the drafting agent under the written policy.
 
 ---
+
+## Chunk 16 — approve and send ✅
+
+_Date: 2026-10-14_
+
+**What & why.** _Metaphor: the manager's signature, and the post room._ A letter the clerk wrote
+goes nowhere until the manager signs it. Before signing, the manager checks it against the loan as
+it is that morning, not as it was when the letter was written. A signed letter goes to the post
+room, which only sends during the day. Before sending, the post room checks the signature is one it
+recognises and that nothing has happened since (a phone call where the borrower promised to pay,
+say) that makes the letter wrong to send.
+
+Chunk 15 wrote the letters. This chunk adds the signature and the post room:
+
+- **The manager's decision**, `collections.decide` and the Messages screen (`/messages`):
+  - **Approve** as drafted, or **edit and approve**. Either way the message is checked again
+    against facts read live then: the arrears from Fineract, the messages this week, any promise.
+    A message that fails is refused with the failed checks, so the manager can fix it. A draft
+    that failed at drafting can't be approved as it stands. The drafter's words are kept when a
+    person edits them.
+  - **Reject**, with a reason. The loan goes back on the morning list for a new draft.
+  - Only portfolio managers and supervisors decide. Officers and auditors can read.
+  - An approved message gets the borrower's number from the directory, a key (`CM-<id>`) and its
+    first moment inside contact hours. It counts as waiting, so the loan stays off the morning
+    list until it is sent.
+- **The gateway sends** (`Messages.cs`), the same way it posts:
+  - It locks one approved message at a time and records the result with an audit row in the same
+    transaction.
+  - It wakes on `NOTIFY message_outbox` (migration 011's trigger) or the poll.
+  - Outside 08:00 to 18:00 Lagos time, Monday to Saturday, it holds the message until the next
+    window. A retry never goes out at night either.
+  - Before sending it checks again: the approver's role, the policy checks, two sent this week,
+    and a promise to pay made since approval. Any of these fails the message for a person.
+  - A provider outage (5xx, a timeout, our token refused) is retried with the postings' backoff.
+    A refusal of the message itself (a number that can't receive) fails it for a person.
+- **A messaging simulator** (`repaydesk.simulators.messaging`, compose `messaging`,
+  http://localhost:18083): an aggregator-shaped API that dedupes on the client reference, refuses
+  a malformed or unreachable number, and keeps each phone's inbox on a page. Nothing leaves the
+  machine.
+- **Navigation:** Messages, with the number of drafts waiting.
+
+**Decisions worth recording.**
+
+- *Check at approval and again at sending.* Approval checks what the words say against the loan.
+  Sending checks what may have happened since. Both can change between a draft and a send.
+- *An edit is checked like a draft.* A manager can fix a message, not bypass the policy.
+- *The API never talks to borrowers.* Approval only marks the message; the gateway, the one
+  component allowed to act outside (ADR 0002), sends it.
+- *Contact hours in the gateway as a fixed UTC+1.* Lagos has no daylight saving, so the gateway
+  needs no time-zone database. The Python side uses the zone by name; both are tested against
+  the same boundaries.
+- *The simulator's store is a SQLite file in a named volume*, so a restart doesn't make it forget
+  which keys it has seen.
+
+**Principles.** _Same signature-and-post-room metaphor._ *No letter leaves unsigned.* *Sign
+against today's facts.* *The post room checks again before it sends.* *Nothing is posted at
+night.*
+
+**Files.**
+
+- New:
+  - `src/repaydesk/collections/decide.py`, `simulators/` (`__init__.py`, `messaging.py`);
+  - `migrations/011_message_outbox.sql`;
+  - `tests/test_messages.py`, `tests/test_simulator.py`;
+  - `gateway/src/Repaydesk.Gateway/Messages.cs`, `gateway/tests/.../MessagesTests.cs`;
+  - `web/src/pages/Messages.tsx`, `Messages.test.tsx`.
+- Changed:
+  - `api.py` (the message routes), `views.py` (drafts waiting in the summary), `collections/queue.py`
+    (an approved message is waiting too);
+  - `tests/test_collections.py` (sent rows carry a phone, a send time and a key);
+  - the gateway's `Program.cs`, `Drainer.cs` (both outboxes), `Settings.cs`, `Outbox.cs`
+    (`Sent`, `Deferred`), `README.md`, `tests/.../TestDatabase.cs`;
+  - `web/src/api.ts`, `App.tsx`, `components/Shell.tsx`, `pages/Collections.tsx`, `pages/Review.tsx`
+    (the reject form, shared), `styles.css`, `test-setup.ts`, `vite.config.ts`, and three tests'
+    summary stubs;
+  - `services/core/Dockerfile` (a store for the simulator), `compose.yaml`, `scripts/dev.py`,
+    `README.md`.
+
+**Depends on / blocks.** Depends on the drafts (chunk 15), the policy (chunk 14) and the gateway
+(chunk 8). Blocks chunk 17: replies to these messages, and promises to pay from them.
+
+**Verification.** `ruff` clean.
+
+- `pytest`: 145 passed, 10 new.
+  - **Approval:** a manager's approval sets the key, the borrower's number and Tuesday 08:00 for
+    an approval on Monday at 19:30; the loan stays off the list. An edit with "your family" is
+    refused, and a fixed one approved by a supervisor keeps the drafter's words. A draft that
+    failed can't be approved until fixed. A part-payment since drafting makes the old amount fail.
+  - **Who:** officers and auditors are refused, a rejection needs a reason, a rejected message
+    can't then be approved, and the loan comes back on the list.
+  - **Over HTTP:** 503 without core banking, 403, 422 with the failed checks, 409 on a second
+    decision, 404 for no such message.
+  - **The simulator:** one message however often it's sent, the refusals, and its page escapes
+    what it shows.
+- The gateway: 48 passed, 18 new. It sends once and records it. A Saturday 19:30 approval is held to
+  Monday 08:00, not sent on Sunday. An outage is retried and still sends once. A refused number
+  fails. An officer's approval, a failed check, a promise since and a third message in a week are
+  each refused. The contact-hours boundaries and the HTTP client's classification are tested too.
+- `vitest`: 36 passed, 4 new. An edit refused by the policy shows why on the card; the fixed one is
+  approved. A failed draft's Approve is disabled. A rejection sends its reason. An officer reads
+  and can't decide, and the Sent tab shows the provider's id and the drafter's original words.
+  `tsc` clean.
+- **On the stack, end to end:** one hand-written draft (no model call) for the first loan due,
+  LN-2026-001565, approved as Ngozi through `decide.approve` against live Fineract at 17:27 Lagos
+  time. The gateway sent it by WhatsApp. Its first three attempts got 500s from the simulator
+  (below), it backed off, and the fourth was accepted as `SIM-000001`. The audit has
+  `message.drafted`, `message.approved`, three `message.retry_scheduled` and `message.sent`.
+
+**Found on the way.** *The simulator couldn't write its store.* The named volume mounted at `/sim`
+was owned by root and the image runs as a non-root user. The image now creates `/sim` for that
+user. The gateway's retries carried the message through the outage, which was a useful
+unplanned test. *The web tests timed out on a cold run* as the suite grew: the first test in a file
+pays for Vite transforming the pages. The per-test limit is now 15 seconds and `findBy` waits 3.
+
+What it does not prove:
+
+- **A real SMS or WhatsApp provider.** The simulator stands in for one. WhatsApp's template
+  rules for business-initiated messages, delivery receipts and opt-outs aren't modelled.
+- **The Messages screen live in a browser.** It's covered by its tests; the live check went
+  through `decide.approve` directly.
+- **Drafts from the real model.** API credit is still out.
+
+**PR package.**
+
+- Subject: `Chunk 16: approve and send: the manager's decision, the gateway sends inside contact hours`
+- Description:
+  > Adds the portfolio manager's decision on drafted collections messages (approve, edit and
+  > approve, reject), with the policy checked again against the loan at approval, and the Messages
+  > screen. The gateway sends approved messages to an SMS/WhatsApp simulator inside contact hours,
+  > rechecking the approver, the weekly limit and any promise made since; outages are retried and
+  > nothing is sent twice.
+
+**Plan.** Milestone 4, collections: SMS/WhatsApp simulators; a manager approves the drafts.
+
+---

@@ -25,6 +25,7 @@ export const AREAS: { label: string; areas: Area[] }[] = [
       { to: "/today", label: "Today", count: (s) => s.failed_postings, alert: true },
       { to: "/review", label: "Review queue", count: (s) => s.pending_proposals },
       { to: "/collections", label: "Collections" },
+      { to: "/messages", label: "Messages", count: (s) => s.drafts_waiting },
       { to: "/payments", label: "Payments", count: (s) => Object.values(s.lines).reduce((a, b) => a + b, 0) - s.lines.duplicate },
     ],
   },

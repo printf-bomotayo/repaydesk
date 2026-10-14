@@ -12,5 +12,6 @@ export default defineConfig({
       "/api": process.env.REPAYDESK_API_URL ?? "http://127.0.0.1:18000",
     },
   },
-  test: { environment: "jsdom", globals: true, setupFiles: ["src/test-setup.ts"] },
+  // A cold run transforms every page first; the first test in each file pays for it.
+  test: { environment: "jsdom", globals: true, setupFiles: ["src/test-setup.ts"], testTimeout: 15_000 },
 });

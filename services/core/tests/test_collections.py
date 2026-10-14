@@ -93,11 +93,14 @@ def test_the_morning_list_leaves_out_promised_drafted_and_twice_messaged_loans(p
     def message(loan, status, ago_days=0):
         sent = status == "sent"
         conn.execute("INSERT INTO collection_messages (loan_ref, borrower_ref, bucket, channel, body, "
-                     "amount_due_kobo, drafted_by, status, decided_by, created_at, sent_at, provider_id) "
+                     "amount_due_kobo, drafted_by, status, decided_by, created_at, sent_at, provider_id, "
+                     "to_phone, send_after, idempotency_key) "
                      "VALUES (%s, %s, 'reminder', 'sms', 'x', 100, 'agent:collector', %s, %s, "
-                     "now() - %s * interval '1 day', %s, %s)",
+                     "now() - %s * interval '1 day', %s, %s, %s, %s, %s)",
                      (loan, borrower[loan], status, None if status == "draft" else "ngozi", ago_days,
-                      datetime.now(LAGOS) if sent else None, "sim-1" if sent else None))
+                      datetime.now(LAGOS) if sent else None, "sim-1" if sent else None,
+                      "07005000000" if sent else None, datetime.now(LAGOS) if sent else None,
+                      f"T-{loan}-{ago_days}" if sent else None))
 
     staff.ensure_demo_staff(conn, "x" * 16)
     promise(a, "open", today + timedelta(days=3))  # promised, not due yet: leave alone

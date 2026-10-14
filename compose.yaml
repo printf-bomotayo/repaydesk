@@ -8,7 +8,8 @@
 #   Jaeger     traces                                                   http://localhost:16686
 #   API        webhooks, sign-in, approvals, the web app's reads          http://localhost:18000
 #   Web        Repaydesk's screens                                      http://localhost:18082
-#   Gateway    posts approved repayments to Fineract and Odoo (.NET)
+#   Gateway    posts approved repayments to Fineract and Odoo, sends approved messages (.NET)
+#   Messaging  a stand-in SMS and WhatsApp provider: each phone's inbox   http://localhost:18083
 #
 # Everything here is synthetic and for local use. Secrets come from .env (copy .env.example).
 
@@ -262,11 +263,33 @@ services:
       ODOO_USERNAME: ${ODOO_USERNAME:-admin}
       ODOO_PASSWORD: ${ODOO_PASSWORD:-admin}
       TWO_PERSON_ABOVE_KOBO: ${TWO_PERSON_ABOVE_KOBO:-50000000}
+      MESSAGING_URL: http://messaging:8000
+      MESSAGING_TOKEN: ${MESSAGING_TOKEN:-dev-only-messaging-token}
     healthcheck:
       test: ["CMD", "dotnet", "Repaydesk.Gateway.dll", "--healthy"]
       interval: 15s
       start_period: 15s
       retries: 5
+
+  # A stand-in for the SMS and WhatsApp provider: takes messages from the gateway as an
+  # aggregator's API would, and shows each phone's inbox. Nothing leaves the machine.
+  messaging:
+    build: ./services/core
+    restart: unless-stopped
+    command: ["uvicorn", "repaydesk.simulators.messaging:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      MESSAGING_TOKEN: ${MESSAGING_TOKEN:-dev-only-messaging-token}
+      SIM_DB: /sim/messaging.db
+      SIM_UNREACHABLE: ${SIM_UNREACHABLE:-}
+    volumes:
+      - simdata:/sim
+    ports:
+      - "127.0.0.1:18083:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 5s
+      start_period: 10s
+      retries: 20
 
   # One-shot: picks up new statement files from data/inbox. With --replay-webhooks it instead
   # delivers the recorded provider webhooks to the API, one request each.
@@ -407,3 +430,4 @@ services:
 volumes:
   pgdata:
   odoodata:
+  simdata:

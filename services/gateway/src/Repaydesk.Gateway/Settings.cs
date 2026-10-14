@@ -14,7 +14,9 @@ public sealed record Settings(
     string OdooUsername,
     string OdooPassword,
     long TwoPersonAboveKobo,
-    TimeSpan Poll)
+    TimeSpan Poll,
+    string MessagingUrl = "http://messaging:8000",
+    string MessagingToken = "dev-only-messaging-token")
 {
     /// <summary>₦500,000, the same default as the API's (ADR 0005).</summary>
     public const long DefaultTwoPersonAboveKobo = 50_000_000;
@@ -37,7 +39,9 @@ public sealed record Settings(
             Need("ODOO_USERNAME"),
             Need("ODOO_PASSWORD"),
             long.Parse(Or("TWO_PERSON_ABOVE_KOBO", DefaultTwoPersonAboveKobo.ToString())),
-            TimeSpan.FromSeconds(int.Parse(Or("GATEWAY_POLL_SECONDS", "15"))));
+            TimeSpan.FromSeconds(int.Parse(Or("GATEWAY_POLL_SECONDS", "15"))),
+            Or("MESSAGING_URL", "http://messaging:8000"),
+            Or("MESSAGING_TOKEN", "dev-only-messaging-token"));
     }
 
     /// <summary>
